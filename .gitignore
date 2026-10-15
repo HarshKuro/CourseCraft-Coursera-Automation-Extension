@@ -1,0 +1,11 @@
+node_modules/
+src/
+webpack.config.js
+package*.json
+secure.js
+.prettierignore
+.prettierrc
+eslint.config.js
+tsconfig.json
+yarn.lock
+*-lock.yaml

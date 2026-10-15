@@ -1,0 +1,85 @@
+/* CourseCraft Floating Toast & Injected UI Styles */
+.coursecraft-toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.coursecraft-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  background: #0f172a;
+  color: #f8fafc;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 500;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  transform: translateY(20px);
+  opacity: 0;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  max-width: 360px;
+}
+
+.coursecraft-toast.show {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.coursecraft-toast-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.coursecraft-toast.info {
+  border-left: 4px solid #6366f1;
+}
+.coursecraft-toast.info .coursecraft-toast-icon {
+  color: #818cf8;
+}
+
+.coursecraft-toast.success {
+  border-left: 4px solid #10b981;
+}
+.coursecraft-toast.success .coursecraft-toast-icon {
+  color: #34d399;
+}
+
+.coursecraft-toast.warning {
+  border-left: 4px solid #f59e0b;
+}
+.coursecraft-toast.warning .coursecraft-toast-icon {
+  color: #fbbf24;
+}
+
+.coursecraft-toast.error {
+  border-left: 4px solid #ef4444;
+}
+.coursecraft-toast.error .coursecraft-toast-icon {
+  color: #f87171;
+}
+
+/* Injected attempt button */
+.coursecraft-attempt-btn {
+  margin-left: 8px;
+  background: #4f46e5 !important;
+  color: #ffffff !important;
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+  padding: 6px 14px !important;
+  cursor: pointer !important;
+  transition: background 0.15s ease !important;
+}
+
+.coursecraft-attempt-btn:hover {
+  background: #4338ca !important;
+}
