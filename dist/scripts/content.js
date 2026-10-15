@@ -869,38 +869,46 @@
       return;
     }
 
-    log(`Processing ${targets.length} lecture(s)...`, 'info');
-    showToast(`Processing ${targets.length} lecture(s)...`, 'info', true);
+    log(`Checking ${targets.length} lecture(s)...`, 'info');
+    showToast(`Checking ${targets.length} lecture(s)...`, 'info', true);
 
     let completed = 0;
+    const needsMarathon = [];
+
     for (const item of targets) {
       const success = await markLectureComplete(item);
-      if (success) completed++;
+      if (success) {
+        completed++;
+      } else {
+        needsMarathon.push(item);
+      }
     }
 
-    // If any long lectures remain uncompleted, launch video marathon
-    const remaining = targets.filter(t => !t.isDone);
-    if (remaining.length > 0) {
-      log(`⚡ Coursera server requires active video player session for ${remaining.length} long lecture(s). Launching Active Video Marathon at 16x speed...`, 'info');
-      showToast(`⚡ Redirecting to active lecture player to fast-forward at 16x speed...`, 'info', true);
-      chrome.storage.local.set({
-        marathonActive: true,
-        marathonModuleOnly: true,
-        marathonCount: completed,
-        marathonTotal: targets.length
-      }, () => {
-        setTimeout(() => {
-          window.location.href = `https://www.coursera.org/learn/${currentCourseSlug}/lecture/${remaining[0].item_id}`;
-        }, 1200);
-      });
+    // If all completed via API (e.g. all short clips)
+    if (completed === targets.length) {
+      log(`Lectures Finished: ${completed}/${targets.length} completed.`, 'success');
+      showToast(`🎉 Successfully completed ${completed}/${targets.length} lecture(s)! Reloading...`, 'success', true);
+      setTimeout(() => {
+        window.location.reload();
+      }, 2200);
       return;
     }
 
-    log(`Lectures Finished: ${completed}/${targets.length} completed.`, completed > 0 ? 'success' : 'warn');
-    showToast(`🎉 Successfully completed ${completed}/${targets.length} lecture(s)! Reloading...`, 'success', true);
-    setTimeout(() => {
-      window.location.reload();
-    }, 2200);
+    // If long lectures require video player validation:
+    log(`⚡ Coursera enforces video player watch validation for ${needsMarathon.length} long lecture(s).`, 'info');
+    log(`⚡ Launching Active Video Player Marathon at 16x speed... Navigating to: ${needsMarathon[0].item_name}`, 'info');
+    showToast(`⚡ Redirecting to active lecture player to fast-forward at 16x speed...`, 'info', true);
+
+    chrome.storage.local.set({
+      marathonActive: true,
+      marathonModuleOnly: true,
+      marathonCount: completed,
+      marathonTotal: targets.length
+    }, () => {
+      setTimeout(() => {
+        window.location.href = `https://www.coursera.org/learn/${currentCourseSlug}/lecture/${needsMarathon[0].item_id}`;
+      }, 1200);
+    });
   }
 
   // 2. Skip Video+ (Bulk Complete ALL Course Lectures with Video Marathon)
@@ -929,39 +937,44 @@
       return;
     }
 
-    // Try API completion first (short videos will finish instantly)
+    // Try API completion first (short clips will finish instantly)
     showToast(`Checking ${allLectures.length} course lectures...`, 'info', true);
     let completed = 0;
+    const needsMarathon = [];
+
     for (const item of allLectures) {
       const success = await markLectureComplete(item);
-      if (success) completed++;
+      if (success) {
+        completed++;
+      } else {
+        needsMarathon.push(item);
+      }
     }
 
-    const remaining = allLectures.filter(l => !l.isDone);
-    if (remaining.length > 0) {
-      const msg = `⚡ ${completed}/${allLectures.length} finished via API. Launching Video Marathon at 16x speed for remaining ${remaining.length} long lectures...`;
-      log(msg, 'info');
-      showToast(msg, 'info', true);
-
-      chrome.storage.local.set({
-        marathonActive: true,
-        marathonModuleOnly: false,
-        marathonCount: completed,
-        marathonTotal: allLectures.length
-      }, () => {
-        setTimeout(() => {
-          window.location.href = `https://www.coursera.org/learn/${currentCourseSlug}/lecture/${remaining[0].item_id}`;
-        }, 1400);
-      });
+    if (completed === allLectures.length) {
+      const msg = `🎉 Binge All Lectures complete: ${completed}/${allLectures.length} lectures finished!`;
+      log(msg, 'success');
+      showToast(msg, 'success', true);
+      setTimeout(() => {
+        window.location.reload();
+      }, 2400);
       return;
     }
 
-    const msg = `🎉 Binge All Lectures complete: ${completed}/${allLectures.length} lectures finished!`;
-    log(msg, 'success');
-    showToast(msg, 'success', true);
-    setTimeout(() => {
-      window.location.reload();
-    }, 2400);
+    const msg = `⚡ ${completed}/${allLectures.length} finished via API. Launching Video Marathon at 16x speed for remaining ${needsMarathon.length} long lectures...`;
+    log(msg, 'info');
+    showToast(msg, 'info', true);
+
+    chrome.storage.local.set({
+      marathonActive: true,
+      marathonModuleOnly: false,
+      marathonCount: completed,
+      marathonTotal: allLectures.length
+    }, () => {
+      setTimeout(() => {
+        window.location.href = `https://www.coursera.org/learn/${currentCourseSlug}/lecture/${needsMarathon[0].item_id}`;
+      }, 1400);
+    });
   }
 
   // Single Lecture API Mark (Full Lifecycle & Coursera DB Sync)
@@ -989,68 +1002,34 @@
     try {
       let isCompleted = false;
 
-      // Endpoint A: onDemandLearnerMaterials.v1
-      if (courseId) {
-        try {
-          const matRes = await fetch('https://www.coursera.org/api/onDemandLearnerMaterials.v1', {
-            method: 'POST',
-            headers: headers,
-            credentials: 'include',
-            body: JSON.stringify({ courseId: courseId, itemId: itemId, isCompleted: true })
-          });
-          if (matRes.ok) isCompleted = true;
-        } catch (_) {}
+      // Send Play event
+      const playUrl = `https://www.coursera.org/api/opencourse.v1/user/${currentUserId}/course/${slug}/item/${itemId}/lecture/videoEvents/play?autoEnroll=false`;
+      await fetch(playUrl, {
+        method: 'POST',
+        headers: headers,
+        credentials: 'include',
+        body: JSON.stringify({ contentRequestBody: { viewedUpTo: 0 } })
+      }).catch(() => {});
+
+      // For short videos (< 180s), send ended event which Coursera allows via API
+      if (durationSec <= 180) {
+        const endedResult = await sendEndedEventWithSyncRetry(currentUserId, slug, courseId, itemId, durationSec, durationMs, headers, startTime);
+        if (endedResult.success) {
+          isCompleted = true;
+        }
+      } else {
+        // Long videos (> 180s): Test API ended event. Coursera rejects headless API for long videos.
+        const testEnded = await sendEndedEventWithSyncRetry(currentUserId, slug, courseId, itemId, durationSec, durationMs, headers, startTime);
+        if (testEnded.success) {
+          isCompleted = true;
+        } else {
+          // Coursera enforced video player watch validation.
+          // MUST NOT pretend this completed! Must be played in video player.
+          isCompleted = false;
+        }
       }
 
-      // Endpoint B: onDemandLectureViews.v1
-      if (courseId) {
-        try {
-          const viewRes = await fetch('https://www.coursera.org/api/onDemandLectureViews.v1', {
-            method: 'POST',
-            headers: headers,
-            credentials: 'include',
-            body: JSON.stringify({
-              courseId: courseId,
-              itemId: itemId,
-              isCompleted: true,
-              watchedUpTo: durationSec || 999999,
-              videoProgress: 1,
-              percentWatched: 1
-            })
-          });
-          if (viewRes.ok) isCompleted = true;
-        } catch (_) {}
-      }
-
-      // Endpoint C: opencourse.v1 ViewedUpto
-      if (currentUserId && slug) {
-        try {
-          const eventRes = await fetch(`https://www.coursera.org/api/opencourse.v1/user/${currentUserId}/course/${slug}/item/${itemId}/videoEvents`, {
-            method: 'POST',
-            headers: headers,
-            credentials: 'include',
-            body: JSON.stringify({ type: 'ViewedUpto', videoPosition: durationSec || 999999 })
-          });
-          if (eventRes.ok) isCompleted = true;
-        } catch (_) {}
-      }
-
-      // Endpoint D: onDemandVideoProgresses.v1
-      if (videoId && courseId) {
-        const progressId = `${currentUserId}~${courseId}~${videoId}`;
-        await fetch(`https://www.coursera.org/api/onDemandVideoProgresses.v1/${progressId}`, {
-          method: 'PUT',
-          headers: headers,
-          credentials: 'include',
-          body: JSON.stringify({ viewedUpTo: durationSec, videoProgressId: progressId })
-        }).catch(() => {});
-      }
-
-      // Endpoint E: Try videoEvents/ended (works immediately for short clips < 180s)
-      const endedResult = await sendEndedEventWithSyncRetry(currentUserId, slug, courseId, itemId, durationSec, durationMs, headers, startTime);
-      if (endedResult.success) isCompleted = true;
-
-      // Endpoint F: If active on screen, trigger DOM video fast-forward
+      // If active video is currently open in the player on this page:
       const videoEl = document.querySelector('video');
       if (videoEl && window.location.pathname.includes(itemId)) {
         try {
@@ -1059,13 +1038,14 @@
           videoEl.currentTime = Math.max(0, (videoEl.duration || 10) - 2.5);
           await videoEl.play().catch(() => {});
           await wait(500);
-          videoEl.dispatchEvent(new Event('timeupdate', { bubbles: true }));
-          videoEl.dispatchEvent(new Event('ended', { bubbles: true }));
+          videoEl.dispatchEvent(new Event('timeupdate'));
+          videoEl.dispatchEvent(new Event('ended'));
+          isCompleted = true;
         } catch (_) {}
       }
 
       const markBtn = document.querySelector('button[data-testid="mark-complete"], button[aria-label="Mark as completed"], button[data-testid="mark-as-completed-button"], button.rc-MarkAsCompleteButton');
-      if (markBtn) {
+      if (markBtn && window.location.pathname.includes(itemId)) {
         try {
           markBtn.click();
           isCompleted = true;
@@ -1075,13 +1055,15 @@
 
       if (isCompleted) {
         item.isDone = true;
-        log(`Lecture [${itemId}] Completed Successfully!`, 'success');
+        log(`Lecture [${itemId}] Completed Successfully via API!`, 'success');
         return true;
       }
 
+      item.isDone = false;
       return false;
     } catch (err) {
       log(`Lecture [${itemId}] Processing Error: ${err.message}`, 'error');
+      item.isDone = false;
       return false;
     }
   }

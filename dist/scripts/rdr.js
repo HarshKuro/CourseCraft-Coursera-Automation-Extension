@@ -1,12 +1,12 @@
 /**
  * CourseCraft - Injected Page Bridge (rdr.js)
- * Version: 4.6.0
+ * Version: 4.6.1
  * Features:
  * - Emulates locking browser User-Agent
  * - Sniffs User ID & course metadata from internal Coursera requests
  * - Unlocks HTML5 video playbackRate (removes 2x limit, enables up to 16x)
  * - Unlocks forward-seeking restrictions
- * - Native video player fast-forward & completion controller
+ * - Native video player fast-forward with asynchronous polling
  * - Auto-advances across course items in Marathon Mode
  */
 
@@ -110,7 +110,6 @@
       },
       set: function(val) {
         this.__cc_rate = val;
-        // If fast forwarding or marathon is active, maintain high speed
         const effective = (window.__COURSECRAFT_FAST_FORWARDING__ || window.__COURSECRAFT_MARATHON__) 
           ? Math.max(val, currentMarathonSpeed) 
           : val;
@@ -157,81 +156,96 @@
     observer.observe(document.documentElement, { childList: true, subtree: true });
   } catch (_) {}
 
-  // 6. Active Video Fast-Forward Engine
+  // 6. Active Video Fast-Forward Engine with Asynchronous DOM Polling
   function runVideoFastForward(callback) {
-    const video = document.querySelector('video');
-    if (!video) {
-      if (callback) callback({ success: false, reason: 'No video element found in DOM' });
-      return;
-    }
+    let attempts = 0;
+    const maxAttempts = 25; // 12.5 seconds total
 
-    hookVideo(video);
-    window.__COURSECRAFT_FAST_FORWARDING__ = true;
-
-    const performSeek = () => {
-      const dur = video.duration;
-      if (!dur || !isFinite(dur)) {
-        if (callback) callback({ success: false, reason: 'Invalid duration' });
+    function findAndFastForward() {
+      const video = document.querySelector('video');
+      if (!video) {
+        attempts++;
+        if (attempts > maxAttempts) {
+          if (callback) callback({ success: false, reason: 'No video player found after 12s polling' });
+          return;
+        }
+        setTimeout(findAndFastForward, 500);
         return;
       }
 
-      // Mute audio to avoid noise burst during high-speed seek
-      video.muted = true;
-      const targetTime = Math.max(0, dur - 2.5);
+      hookVideo(video);
+      window.__COURSECRAFT_FAST_FORWARDING__ = true;
 
-      try {
-        if (nativeTime?.set) nativeTime.set.call(video, targetTime);
-        else video.currentTime = targetTime;
-      } catch (_) {
-        video.currentTime = targetTime;
-      }
-
-      try {
-        if (nativeRate?.set) nativeRate.set.call(video, currentMarathonSpeed);
-        else video.playbackRate = currentMarathonSpeed;
-      } catch (_) {}
-
-      video.__userPaused = false;
-      nativePlay.call(video).catch(() => {});
-      video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
-
-      let finished = false;
-      const cleanup = (wasFallback = false) => {
-        if (finished) return;
-        finished = true;
-        window.__COURSECRAFT_FAST_FORWARDING__ = false;
-
-        // Try clicking on-page completion button if Coursera rendered it
-        const markBtn = document.querySelector('button[data-testid="mark-complete"], button[aria-label="Mark as completed"], button[data-testid="mark-as-completed-button"], button.rc-MarkAsCompleteButton');
-        if (markBtn) {
-          try { markBtn.click(); } catch (_) {}
+      const performSeek = () => {
+        const dur = video.duration;
+        if (!dur || !isFinite(dur) || dur <= 0) {
+          setTimeout(performSeek, 400);
+          return;
         }
 
-        if (callback) callback({ success: true, duration: dur, fallback: wasFallback });
+        // Mute audio to avoid noise burst during high-speed seek
+        video.muted = true;
+        
+        // Seek to 12s before end (takes ~0.8s at 16x speed to play through end)
+        const targetTime = Math.max(0, dur - 12);
+
+        try {
+          if (nativeTime?.set) nativeTime.set.call(video, targetTime);
+          else video.currentTime = targetTime;
+        } catch (_) {
+          video.currentTime = targetTime;
+        }
+
+        try {
+          if (nativeRate?.set) nativeRate.set.call(video, currentMarathonSpeed);
+          else video.playbackRate = currentMarathonSpeed;
+        } catch (_) {}
+
+        video.__userPaused = false;
+        nativePlay.call(video).catch(() => {});
+        video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+
+        let finished = false;
+        const cleanup = (wasFallback = false) => {
+          if (finished) return;
+          finished = true;
+          window.__COURSECRAFT_FAST_FORWARDING__ = false;
+
+          // Try clicking on-page completion button if Coursera rendered it
+          const markBtn = document.querySelector('button[data-testid="mark-complete"], button[aria-label="Mark as completed"], button[data-testid="mark-as-completed-button"], button.rc-MarkAsCompleteButton');
+          if (markBtn) {
+            try { markBtn.click(); } catch (_) {}
+          }
+
+          if (callback) callback({ success: true, duration: dur, fallback: wasFallback });
+        };
+
+        video.addEventListener('ended', () => cleanup(false), { once: true });
+
+        // Safety fallback: if video doesn't end in 5.5s, trigger completion dispatch
+        setTimeout(() => {
+          if (!finished && window.__COURSECRAFT_FAST_FORWARDING__) {
+            try {
+              if (nativeTime?.set) nativeTime.set.call(video, dur);
+              else video.currentTime = dur;
+              video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+              video.dispatchEvent(new Event('ended', { bubbles: true }));
+            } catch (_) {}
+            cleanup(true);
+          }
+        }, 5500);
       };
 
-      video.addEventListener('ended', () => cleanup(false), { once: true });
-
-      // Safety fallback: if video doesn't end in 4.5s, trigger completion dispatch
-      setTimeout(() => {
-        if (!finished && window.__COURSECRAFT_FAST_FORWARDING__) {
-          try {
-            if (nativeTime?.set) nativeTime.set.call(video, dur);
-            else video.currentTime = dur;
-            video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
-            video.dispatchEvent(new Event('ended', { bubbles: true }));
-          } catch (_) {}
-          cleanup(true);
-        }
-      }, 4500);
-    };
-
-    if (video.readyState >= 1 && isFinite(video.duration)) {
-      performSeek();
-    } else {
-      video.addEventListener('loadedmetadata', performSeek, { once: true });
-      nativePlay.call(video).catch(() => {});
+      if (video.readyState >= 1 && isFinite(video.duration) && video.duration > 0) {
+        performSeek();
+      } else {
+        video.addEventListener('loadedmetadata', performSeek, { once: true });
+        video.addEventListener('canplay', performSeek, { once: true });
+        nativePlay.call(video).catch(() => {});
+      }
     }
+
+    findAndFastForward();
   }
 
   // 7. Auto-Advance Next Item Selector
