@@ -520,17 +520,20 @@
   // -----------------------------------------------------------
   // COURSERA LECTURE ENDED EVENT DISPATCHER WITH SYNC RETRY
   // -----------------------------------------------------------
-  async function sendEndedEventWithSyncRetry(userId, slug, courseId, itemId, durationSec, durationMs, headers, maxRetries = 3, retryDelayMs = 2500) {
+  async function sendEndedEventWithSyncRetry(userId, slug, courseId, itemId, durationSec, durationMs, headers, startTime) {
     const url = `https://www.coursera.org/api/opencourse.v1/user/${userId}/course/${slug}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`;
+    const targetElapsedSec = Math.max(6, Math.ceil(durationSec / 15.0));
+    const maxWaitMs = (targetElapsedSec + 4) * 1000;
+    let attempt = 1;
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    while (Date.now() - startTime <= maxWaitMs) {
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      const remaining = Math.max(0, targetElapsedSec - elapsed);
+
       try {
-        let payload = JSON.stringify({ contentRequestBody: {} });
-        if (attempt === 2 && durationSec) {
-          payload = JSON.stringify({ contentRequestBody: { viewedUpTo: durationSec } });
-        } else if (attempt >= 3 && durationMs) {
-          payload = JSON.stringify({ contentRequestBody: { viewedUpTo: durationMs } });
-        }
+        const payload = JSON.stringify({
+          contentRequestBody: { viewedUpTo: durationSec }
+        });
 
         const res = await fetch(url, {
           method: 'POST',
@@ -544,22 +547,45 @@
         try { data = JSON.parse(rawText); } catch (_) {}
         const progressState = data?.itemProgress?.progressState;
 
-        log(`Ended [${itemId}] Attempt ${attempt}/${maxRetries}: HTTP ${res.status} | State: ${progressState || 'none'} | Body: ${rawText.slice(0, 180)}`, res.ok ? 'info' : 'warn');
-
         if (res.ok && (progressState === 'Completed' || res.status === 200 || res.status === 204)) {
-          return { success: true, progressState: progressState || 'Completed' };
+          log(`Ended [${itemId}] Finished: HTTP ${res.status} | State: Completed (${elapsed}s elapsed)`, 'success');
+          return { success: true, progressState: 'Completed' };
         }
 
-        if ((res.status === 400 || progressState === 'Started') && attempt < maxRetries) {
-          log(`Lecture [${itemId}] Waiting ${retryDelayMs / 1000}s for Coursera DB sync (retry ${attempt + 1})...`, 'info');
-          await wait(retryDelayMs);
-          continue;
+        // If Coursera 15x rate limit check requires more elapsed time, wait for the window
+        if (res.status === 400 || progressState === 'Started') {
+          if (remaining > 0) {
+            log(`Lecture [${itemId}] 15x Fast-Track (${remaining}s remaining for ${durationSec}s video)... attempt ${attempt}`, 'info');
+            await wait(Math.min(2600, Math.max(1200, remaining * 1000)));
+          } else {
+            await wait(2000);
+          }
         }
       } catch (err) {
         log(`Ended [${itemId}] Error: ${err.message}`, 'warn');
-        if (attempt < maxRetries) await wait(1800);
+        await wait(1800);
       }
+
+      attempt++;
+      if (attempt > 25) break;
     }
+
+    // Final attempt verification
+    try {
+      const finalRes = await fetch(url, {
+        method: 'POST',
+        headers: headers,
+        credentials: 'include',
+        body: JSON.stringify({ contentRequestBody: { viewedUpTo: durationSec } })
+      });
+      const fText = await finalRes.text();
+      let fData = {};
+      try { fData = JSON.parse(fText); } catch (_) {}
+      if (finalRes.ok && (fData?.itemProgress?.progressState === 'Completed' || finalRes.status === 200 || finalRes.status === 204)) {
+        log(`Ended [${itemId}] Verified Final: Completed`, 'success');
+        return { success: true, progressState: 'Completed' };
+      }
+    } catch (_) {}
 
     return { success: false };
   }
@@ -794,16 +820,28 @@
       log(`Phase 4 Complete: ${stats.discussions.done}/${allDiscussions.length} discussions finished.`, 'success');
     }
 
-    // Phase 5: Fast-Track Video Lectures
+    // Phase 5: Fast-Track Video Lectures with 15x Concurrent Speed Engine
     if (allLectures.length > 0) {
-      showToast(`[5/5] Fast-tracking ${allLectures.length} video lectures...`, 'info', true);
-      for (let i = 0; i < allLectures.length; i++) {
-        const item = allLectures[i];
-        showToast(`[5/5] Video (${i + 1}/${allLectures.length}): ${item.item_name}`, 'info', true);
-        const success = await markLectureComplete(item);
-        if (success) stats.lectures.done++;
-        await wait(300);
+      showToast(`[5/5] Fast-tracking ${allLectures.length} video lectures concurrently at 15x speed...`, 'info', true);
+      const concurrency = Math.min(4, allLectures.length);
+      let nextIdx = 0;
+
+      async function lectureWorker() {
+        while (nextIdx < allLectures.length) {
+          const i = nextIdx++;
+          const item = allLectures[i];
+          showToast(`[5/5] Video (${i + 1}/${allLectures.length}): ${item.item_name}`, 'info', true);
+          const success = await markLectureComplete(item);
+          if (success) stats.lectures.done++;
+        }
       }
+
+      const workers = [];
+      for (let w = 0; w < concurrency; w++) {
+        workers.push(lectureWorker());
+      }
+      await Promise.all(workers);
+
       log(`Phase 5 Complete: ${stats.lectures.done}/${allLectures.length} lectures finished.`, 'success');
     }
 
@@ -830,17 +868,6 @@
       return;
     }
 
-    // Trigger video element on screen if present
-    const videoEl = document.querySelector('video');
-    if (videoEl) {
-      try {
-        videoEl.currentTime = videoEl.duration || 1000;
-        videoEl.dispatchEvent(new Event('timeupdate'));
-        videoEl.dispatchEvent(new Event('ended'));
-        videoEl.dispatchEvent(new Event('pause'));
-      } catch (_) {}
-    }
-
     const targets = getContextItems('lecture');
     if (targets.length === 0) {
       log('No video lectures found in this section.', 'warn');
@@ -848,59 +875,81 @@
       return;
     }
 
-    log(`Starting completion of ${targets.length} lectures for user ${currentUserId}...`, 'info');
-    showToast(`Processing ${targets.length} lecture(s)...`, 'info', true);
+    log(`Starting completion of ${targets.length} lectures at 15x speed...`, 'info');
+    showToast(`Processing ${targets.length} lecture(s) concurrently...`, 'info', true);
 
+    const concurrency = Math.min(3, targets.length);
     let completed = 0;
-    for (let i = 0; i < targets.length; i++) {
-      const item = targets[i];
-      showToast(`Processing (${i + 1}/${targets.length}): ${item.item_name}`, 'info', true);
-      const success = await markLectureComplete(item);
-      if (success) completed++;
-      await wait(500);
+    let nextIdx = 0;
+
+    async function worker() {
+      while (nextIdx < targets.length) {
+        const i = nextIdx++;
+        const item = targets[i];
+        showToast(`Fast-tracking (${i + 1}/${targets.length}): ${item.item_name}`, 'info', true);
+        const success = await markLectureComplete(item);
+        if (success) completed++;
+      }
     }
+
+    const workers = [];
+    for (let w = 0; w < concurrency; w++) {
+      workers.push(worker());
+    }
+    await Promise.all(workers);
 
     log(`Lectures Finished: ${completed}/${targets.length} completed.`, completed > 0 ? 'success' : 'warn');
     showToast(`🎉 Successfully completed ${completed}/${targets.length} lecture(s)! Reloading...`, 'success', true);
     setTimeout(() => {
       window.location.reload();
-    }, 1800);
+    }, 2200);
   }
 
   // 2. Skip Video+ (Bulk Complete ALL Course Lectures)
   async function completeAllLectures() {
-    log('Connecting to course data for Skip Video+...', 'info');
-    showToast('Connecting to course data...', 'info');
+    log('Initializing Binge All Lectures (15x Concurrent Engine)...', 'info');
+    showToast('🚀 Loading all course lectures...', 'info', true);
 
-    const ok = await ensureCourseContext();
+    const ok = await ensureCourseContext(true);
     if (!ok) {
-      showToast('Could not detect User ID. Please check the popup.', 'error');
+      showToast('Could not load course lectures. Please check popup.', 'error');
       return;
     }
 
-    const allVideos = courseItems.filter((i) => i.typeName === 'lecture');
-    if (allVideos.length === 0) {
+    const allLectures = courseItems.filter((i) => i.typeName === 'lecture');
+    if (allLectures.length === 0) {
       showToast('No video lectures found in this course.', 'warning');
       return;
     }
 
-    log(`Skip Video+: Processing all ${allVideos.length} lectures in course...`, 'info');
-    showToast(`Processing all ${allVideos.length} lectures in course...`, 'info', true);
+    showToast(`Fast-tracking ${allLectures.length} course lectures at 15x speed...`, 'info', true);
 
+    const concurrency = Math.min(4, allLectures.length);
     let completed = 0;
-    for (let i = 0; i < allVideos.length; i++) {
-      const item = allVideos[i];
-      showToast(`Processing (${i + 1}/${allVideos.length}): ${item.item_name}`, 'info', true);
-      const success = await markLectureComplete(item);
-      if (success) completed++;
-      await wait(500);
+    let nextIdx = 0;
+
+    async function worker() {
+      while (nextIdx < allLectures.length) {
+        const i = nextIdx++;
+        const item = allLectures[i];
+        showToast(`Fast-tracking (${i + 1}/${allLectures.length}): ${item.item_name}`, 'info', true);
+        const success = await markLectureComplete(item);
+        if (success) completed++;
+      }
     }
 
-    log(`Skip Video+ completed: ${completed}/${allVideos.length} finished.`, 'success');
-    showToast(`🎉 Skip Video+ completed! ${completed}/${allVideos.length} lectures finished. Reloading...`, 'success', true);
+    const workers = [];
+    for (let w = 0; w < concurrency; w++) {
+      workers.push(worker());
+    }
+    await Promise.all(workers);
+
+    const msg = `🎉 Binge All Lectures complete: ${completed}/${allLectures.length} lectures finished!`;
+    log(msg, 'success');
+    showToast(msg, 'success', true);
     setTimeout(() => {
       window.location.reload();
-    }, 2000);
+    }, 2400);
   }
 
   // Single Lecture API Mark (Full Lifecycle & Coursera DB Sync)
@@ -910,6 +959,7 @@
     const courseId = item.course_id || currentCourseId;
     const itemId = item.item_id;
     const headers = await getCourseraHeaders();
+    const startTime = Date.now();
 
     log(`Lecture [${itemId}] "${item.item_name}": Fetching video metadata...`, 'info');
 
@@ -923,6 +973,7 @@
     const rawTime = item.timeCommitment || 180000;
     const durationMs = Math.floor(rawTime > 1000 ? rawTime : rawTime * 1000);
     const durationSec = Math.round(item.exactDuration || (durationMs / 1000));
+    const targetElapsedSec = Math.max(6, Math.ceil(durationSec / 15.0));
 
     try {
       // Step A: Send Play event
@@ -931,18 +982,16 @@
         method: 'POST',
         headers: headers,
         credentials: 'include',
-        body: JSON.stringify({ contentRequestBody: {} })
+        body: JSON.stringify({ contentRequestBody: { viewedUpTo: 0 } })
       }).catch(() => {});
 
       if (playRes) {
         log(`Lecture [${itemId}] Play Event: HTTP ${playRes.status}`, playRes.ok ? 'info' : 'warn');
       }
 
-      // Step B: Incremental Checkpoint Registration (Solves >3min video validation)
-      // Coursera validates that long videos have progress registered in sequential intervals (<=60s chunks)
+      // Step B: Incremental Checkpoint Registration (60s intervals)
       if (videoId && courseId) {
         const progressId = `${currentUserId}~${courseId}~${videoId}`;
-        
         const stepSec = 60;
         const checkPointsSec = [];
         for (let t = stepSec; t < durationSec; t += stepSec) {
@@ -950,19 +999,8 @@
         }
         if (!checkPointsSec.includes(durationSec)) checkPointsSec.push(durationSec);
 
-        const stepMs = 60000;
-        const checkPointsMs = [];
-        for (let t = stepMs; t < durationMs; t += stepMs) {
-          checkPointsMs.push(t);
-        }
-        if (!checkPointsMs.includes(durationMs)) checkPointsMs.push(durationMs);
-
-        // Dispatch sequential checkpoints to simulate natural video progression
         for (let k = 0; k < checkPointsSec.length; k++) {
           const secVal = checkPointsSec[k];
-          const msVal = checkPointsMs[k] || (secVal * 1000);
-
-          // Register in seconds
           await fetch(`https://www.coursera.org/api/onDemandVideoProgresses.v1/${progressId}`, {
             method: 'PUT',
             headers: headers,
@@ -973,39 +1011,25 @@
             })
           }).catch(() => {});
 
-          // Register in milliseconds
-          await fetch(`https://www.coursera.org/api/onDemandVideoProgresses.v1/${progressId}`, {
-            method: 'PUT',
-            headers: headers,
-            credentials: 'include',
-            body: JSON.stringify({
-              viewedUpTo: msVal,
-              videoProgressId: progressId
-            })
-          }).catch(() => {});
-
           if (checkPointsSec.length > 1 && k < checkPointsSec.length - 1) {
-            await wait(100);
+            await wait(80);
           }
         }
 
-        log(`Lecture [${itemId}] Checkpoints Registered: ${checkPointsSec.length} intervals (0s -> ${durationSec}s / ${durationMs}ms)`, 'info');
+        log(`Lecture [${itemId}] Registered ${checkPointsSec.length} checkpoints (${durationSec}s video target: ${targetElapsedSec}s at 15x)`, 'info');
       }
 
-      // Step C: Send Pause event right before ended (authenticates player state transition)
+      // Step C: Send Pause event
       const pauseUrl = `https://www.coursera.org/api/opencourse.v1/user/${currentUserId}/course/${slug}/item/${itemId}/lecture/videoEvents/pause?autoEnroll=false`;
       await fetch(pauseUrl, {
         method: 'POST',
         headers: headers,
         credentials: 'include',
-        body: JSON.stringify({ contentRequestBody: {} })
+        body: JSON.stringify({ contentRequestBody: { viewedUpTo: durationSec } })
       }).catch(() => {});
 
-      // Delay allowing Coursera database cluster to commit sequential checkpoints
-      await wait(1600);
-
-      // Step D: Send Ended event with retry loop
-      const endedResult = await sendEndedEventWithSyncRetry(currentUserId, slug, courseId, itemId, durationSec, durationMs, headers, 3, 2400);
+      // Step D: Send Ended event with calibrated 15x speed window
+      const endedResult = await sendEndedEventWithSyncRetry(currentUserId, slug, courseId, itemId, durationSec, durationMs, headers, startTime);
 
       let isCompleted = endedResult.success;
 
