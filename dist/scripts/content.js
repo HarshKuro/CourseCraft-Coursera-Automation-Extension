@@ -938,50 +938,83 @@
         log(`Lecture [${itemId}] Play Event: HTTP ${playRes.status}`, playRes.ok ? 'info' : 'warn');
       }
 
-      // Step B: Send Video Progress PUT with dual-unit registration (seconds and milliseconds)
+      // Step B: Incremental Checkpoint Registration (Solves >3min video validation)
+      // Coursera validates that long videos have progress registered in sequential intervals (<=60s chunks)
       if (videoId && courseId) {
         const progressId = `${currentUserId}~${courseId}~${videoId}`;
         
-        // 1. Register progress in seconds (standard media tracking unit)
-        const putSecRes = await fetch(`https://www.coursera.org/api/onDemandVideoProgresses.v1/${progressId}`, {
-          method: 'PUT',
-          headers: headers,
-          credentials: 'include',
-          body: JSON.stringify({
-            viewedUpTo: durationSec,
-            videoProgressId: progressId
-          })
-        }).catch(() => {});
-
-        // 2. Also register progress in milliseconds
-        await fetch(`https://www.coursera.org/api/onDemandVideoProgresses.v1/${progressId}`, {
-          method: 'PUT',
-          headers: headers,
-          credentials: 'include',
-          body: JSON.stringify({
-            viewedUpTo: durationMs,
-            videoProgressId: progressId
-          })
-        }).catch(() => {});
-
-        if (putSecRes) {
-          log(`Lecture [${itemId}] Progress PUT (${durationSec}s / ${durationMs}ms): HTTP ${putSecRes.status}`, putSecRes.ok ? 'info' : 'warn');
+        const stepSec = 60;
+        const checkPointsSec = [];
+        for (let t = stepSec; t < durationSec; t += stepSec) {
+          checkPointsSec.push(t);
         }
+        if (!checkPointsSec.includes(durationSec)) checkPointsSec.push(durationSec);
+
+        const stepMs = 60000;
+        const checkPointsMs = [];
+        for (let t = stepMs; t < durationMs; t += stepMs) {
+          checkPointsMs.push(t);
+        }
+        if (!checkPointsMs.includes(durationMs)) checkPointsMs.push(durationMs);
+
+        // Dispatch sequential checkpoints to simulate natural video progression
+        for (let k = 0; k < checkPointsSec.length; k++) {
+          const secVal = checkPointsSec[k];
+          const msVal = checkPointsMs[k] || (secVal * 1000);
+
+          // Register in seconds
+          await fetch(`https://www.coursera.org/api/onDemandVideoProgresses.v1/${progressId}`, {
+            method: 'PUT',
+            headers: headers,
+            credentials: 'include',
+            body: JSON.stringify({
+              viewedUpTo: secVal,
+              videoProgressId: progressId
+            })
+          }).catch(() => {});
+
+          // Register in milliseconds
+          await fetch(`https://www.coursera.org/api/onDemandVideoProgresses.v1/${progressId}`, {
+            method: 'PUT',
+            headers: headers,
+            credentials: 'include',
+            body: JSON.stringify({
+              viewedUpTo: msVal,
+              videoProgressId: progressId
+            })
+          }).catch(() => {});
+
+          if (checkPointsSec.length > 1 && k < checkPointsSec.length - 1) {
+            await wait(100);
+          }
+        }
+
+        log(`Lecture [${itemId}] Checkpoints Registered: ${checkPointsSec.length} intervals (0s -> ${durationSec}s / ${durationMs}ms)`, 'info');
       }
 
-      // Step C: Delay for Coursera replica commit
-      await wait(1800);
+      // Step C: Send Pause event right before ended (authenticates player state transition)
+      const pauseUrl = `https://www.coursera.org/api/opencourse.v1/user/${currentUserId}/course/${slug}/item/${itemId}/lecture/videoEvents/pause?autoEnroll=false`;
+      await fetch(pauseUrl, {
+        method: 'POST',
+        headers: headers,
+        credentials: 'include',
+        body: JSON.stringify({ contentRequestBody: {} })
+      }).catch(() => {});
+
+      // Delay allowing Coursera database cluster to commit sequential checkpoints
+      await wait(1600);
 
       // Step D: Send Ended event with retry loop
       const endedResult = await sendEndedEventWithSyncRetry(currentUserId, slug, courseId, itemId, durationSec, durationMs, headers, 3, 2400);
 
       let isCompleted = endedResult.success;
 
-      // Step E: Trigger DOM video/button if active page
+      // Step E: Trigger DOM video/button if active on screen
       const videoEl = document.querySelector('video');
       if (videoEl) {
         try {
           videoEl.muted = true;
+          videoEl.playbackRate = 16.0;
           videoEl.currentTime = Math.max(0, (videoEl.duration || 10) - 0.5);
           await videoEl.play().catch(() => {});
           await wait(600);
