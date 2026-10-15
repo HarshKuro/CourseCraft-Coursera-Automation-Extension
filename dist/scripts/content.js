@@ -522,70 +522,35 @@
   // -----------------------------------------------------------
   async function sendEndedEventWithSyncRetry(userId, slug, courseId, itemId, durationSec, durationMs, headers, startTime) {
     const url = `https://www.coursera.org/api/opencourse.v1/user/${userId}/course/${slug}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`;
-    const targetElapsedSec = Math.max(6, Math.ceil(durationSec / 15.0));
-    const maxWaitMs = (targetElapsedSec + 4) * 1000;
-    let attempt = 1;
 
-    while (Date.now() - startTime <= maxWaitMs) {
-      const elapsed = Math.round((Date.now() - startTime) / 1000);
-      const remaining = Math.max(0, targetElapsedSec - elapsed);
-
-      try {
-        const payload = JSON.stringify({
-          contentRequestBody: { viewedUpTo: durationSec }
-        });
-
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: headers,
-          credentials: 'include',
-          body: payload
-        });
-
-        const rawText = await res.text();
-        let data = {};
-        try { data = JSON.parse(rawText); } catch (_) {}
-        const progressState = data?.itemProgress?.progressState;
-
-        if (res.ok && (progressState === 'Completed' || res.status === 200 || res.status === 204)) {
-          log(`Ended [${itemId}] Finished: HTTP ${res.status} | State: Completed (${elapsed}s elapsed)`, 'success');
-          return { success: true, progressState: 'Completed' };
-        }
-
-        // If Coursera 15x rate limit check requires more elapsed time, wait for the window
-        if (res.status === 400 || progressState === 'Started') {
-          if (remaining > 0) {
-            log(`Lecture [${itemId}] 15x Fast-Track (${remaining}s remaining for ${durationSec}s video)... attempt ${attempt}`, 'info');
-            await wait(Math.min(2600, Math.max(1200, remaining * 1000)));
-          } else {
-            await wait(2000);
-          }
-        }
-      } catch (err) {
-        log(`Ended [${itemId}] Error: ${err.message}`, 'warn');
-        await wait(1800);
-      }
-
-      attempt++;
-      if (attempt > 25) break;
-    }
-
-    // Final attempt verification
     try {
-      const finalRes = await fetch(url, {
+      const payload = JSON.stringify({
+        contentRequestBody: { viewedUpTo: durationSec }
+      });
+
+      const res = await fetch(url, {
         method: 'POST',
         headers: headers,
         credentials: 'include',
-        body: JSON.stringify({ contentRequestBody: { viewedUpTo: durationSec } })
+        body: payload
       });
-      const fText = await finalRes.text();
-      let fData = {};
-      try { fData = JSON.parse(fText); } catch (_) {}
-      if (finalRes.ok && (fData?.itemProgress?.progressState === 'Completed' || finalRes.status === 200 || finalRes.status === 204)) {
-        log(`Ended [${itemId}] Verified Final: Completed`, 'success');
+
+      const rawText = await res.text();
+      let data = {};
+      try { data = JSON.parse(rawText); } catch (_) {}
+      const progressState = data?.itemProgress?.progressState;
+
+      if (res.ok && (progressState === 'Completed' || res.status === 200 || res.status === 204)) {
+        log(`Ended [${itemId}] API Success: HTTP ${res.status} | State: Completed`, 'success');
         return { success: true, progressState: 'Completed' };
       }
-    } catch (_) {}
+
+      if (res.status === 400 && rawText.includes('validation failed')) {
+        log(`Ended [${itemId}]: Coursera server enforces video player watch validation for long video (${durationSec}s).`, 'info');
+      }
+    } catch (err) {
+      log(`Ended [${itemId}] API Note: ${err.message}`, 'info');
+    }
 
     return { success: false };
   }
@@ -820,9 +785,9 @@
       log(`Phase 4 Complete: ${stats.discussions.done}/${allDiscussions.length} discussions finished.`, 'success');
     }
 
-    // Phase 5: Fast-Track Video Lectures with 15x Concurrent Speed Engine
+    // Phase 5: Video Lectures (Instant API + Active Player Marathon)
     if (allLectures.length > 0) {
-      showToast(`[5/5] Fast-tracking ${allLectures.length} video lectures concurrently at 15x speed...`, 'info', true);
+      showToast(`[5/5] Checking ${allLectures.length} video lectures...`, 'info', true);
       const concurrency = Math.min(4, allLectures.length);
       let nextIdx = 0;
 
@@ -830,7 +795,6 @@
         while (nextIdx < allLectures.length) {
           const i = nextIdx++;
           const item = allLectures[i];
-          showToast(`[5/5] Video (${i + 1}/${allLectures.length}): ${item.item_name}`, 'info', true);
           const success = await markLectureComplete(item);
           if (success) stats.lectures.done++;
         }
@@ -842,12 +806,33 @@
       }
       await Promise.all(workers);
 
-      log(`Phase 5 Complete: ${stats.lectures.done}/${allLectures.length} lectures finished.`, 'success');
+      log(`Phase 5: ${stats.lectures.done}/${allLectures.length} lectures completed via API.`, stats.lectures.done === allLectures.length ? 'success' : 'info');
+
+      // If long videos remain uncompleted due to Coursera server-side watch validation
+      const remainingLectures = allLectures.filter(l => !l.isDone);
+      if (remainingLectures.length > 0) {
+        const remainingCount = remainingLectures.length;
+        const msg = `⚡ Phases 1-4 Complete! (${stats.readings.done} readings, ${stats.discussions.done} discussions, ${stats.widgets.done} widgets). Coursera requires active player session for ${remainingCount} long lecture(s). Launching Video Marathon at 16x speed...`;
+        log(msg, 'info');
+        showToast(msg, 'info', true);
+
+        chrome.storage.local.set({
+          marathonActive: true,
+          marathonModuleOnly: false,
+          marathonCount: stats.lectures.done,
+          marathonTotal: allLectures.length
+        }, () => {
+          setTimeout(() => {
+            window.location.href = `https://www.coursera.org/learn/${currentCourseSlug}/lecture/${remainingLectures[0].item_id}`;
+          }, 1800);
+        });
+        return;
+      }
     }
 
     // Grand Finale Toast & Reload
     const totalDone = stats.readings.done + stats.widgets.done + stats.dialogues.done + stats.discussions.done + stats.lectures.done;
-    const summaryMsg = `🎓 Full Course Complete! Finished ${totalDone} items: ${stats.readings.done}/${stats.readings.total} readings, ${stats.discussions.done}/${stats.discussions.total} discussions, ${stats.widgets.done}/${stats.widgets.total} widgets, ${stats.dialogues.done}/${stats.dialogues.total} dialogues, ${stats.lectures.done}/${stats.lectures.total} lectures!`;
+    const summaryMsg = `🎉 Full Course Complete! Finished ${totalDone} items: ${stats.readings.done}/${stats.readings.total} readings, ${stats.discussions.done}/${stats.discussions.total} discussions, ${stats.widgets.done}/${stats.widgets.total} widgets, ${stats.dialogues.done}/${stats.dialogues.total} dialogues, ${stats.lectures.done}/${stats.lectures.total} lectures!`;
     log(summaryMsg, 'success');
     showToast(summaryMsg, 'success', true);
 
@@ -868,6 +853,15 @@
       return;
     }
 
+    // A. If already on an active lecture player page, run instant 16x fast-forward!
+    if (window.location.pathname.includes('/lecture/')) {
+      log('⚡ Active lecture player detected. Running Active Fast-Forward at 16x speed...', 'info');
+      showToast('⚡ Fast-forwarding video at 16x speed...', 'info', true);
+      window.postMessage({ source: 'coursecraft-content', command: 'FAST_FORWARD' }, '*');
+      return;
+    }
+
+    // B. If on course overview / module page:
     const targets = getContextItems('lecture');
     if (targets.length === 0) {
       log('No video lectures found in this section.', 'warn');
@@ -875,28 +869,32 @@
       return;
     }
 
-    log(`Starting completion of ${targets.length} lectures at 15x speed...`, 'info');
-    showToast(`Processing ${targets.length} lecture(s) concurrently...`, 'info', true);
+    log(`Processing ${targets.length} lecture(s)...`, 'info');
+    showToast(`Processing ${targets.length} lecture(s)...`, 'info', true);
 
-    const concurrency = Math.min(3, targets.length);
     let completed = 0;
-    let nextIdx = 0;
-
-    async function worker() {
-      while (nextIdx < targets.length) {
-        const i = nextIdx++;
-        const item = targets[i];
-        showToast(`Fast-tracking (${i + 1}/${targets.length}): ${item.item_name}`, 'info', true);
-        const success = await markLectureComplete(item);
-        if (success) completed++;
-      }
+    for (const item of targets) {
+      const success = await markLectureComplete(item);
+      if (success) completed++;
     }
 
-    const workers = [];
-    for (let w = 0; w < concurrency; w++) {
-      workers.push(worker());
+    // If any long lectures remain uncompleted, launch video marathon
+    const remaining = targets.filter(t => !t.isDone);
+    if (remaining.length > 0) {
+      log(`⚡ Coursera server requires active video player session for ${remaining.length} long lecture(s). Launching Active Video Marathon at 16x speed...`, 'info');
+      showToast(`⚡ Redirecting to active lecture player to fast-forward at 16x speed...`, 'info', true);
+      chrome.storage.local.set({
+        marathonActive: true,
+        marathonModuleOnly: true,
+        marathonCount: completed,
+        marathonTotal: targets.length
+      }, () => {
+        setTimeout(() => {
+          window.location.href = `https://www.coursera.org/learn/${currentCourseSlug}/lecture/${remaining[0].item_id}`;
+        }, 1200);
+      });
+      return;
     }
-    await Promise.all(workers);
 
     log(`Lectures Finished: ${completed}/${targets.length} completed.`, completed > 0 ? 'success' : 'warn');
     showToast(`🎉 Successfully completed ${completed}/${targets.length} lecture(s)! Reloading...`, 'success', true);
@@ -905,9 +903,9 @@
     }, 2200);
   }
 
-  // 2. Skip Video+ (Bulk Complete ALL Course Lectures)
+  // 2. Skip Video+ (Bulk Complete ALL Course Lectures with Video Marathon)
   async function completeAllLectures() {
-    log('Initializing Binge All Lectures (15x Concurrent Engine)...', 'info');
+    log('⚡ Initializing Binge All Lectures (Video Marathon Mode)...', 'info');
     showToast('🚀 Loading all course lectures...', 'info', true);
 
     const ok = await ensureCourseContext(true);
@@ -922,27 +920,41 @@
       return;
     }
 
-    showToast(`Fast-tracking ${allLectures.length} course lectures at 15x speed...`, 'info', true);
+    // If already on a lecture page, enable marathon and fast-forward immediately
+    if (window.location.pathname.includes('/lecture/')) {
+      chrome.storage.local.set({ marathonActive: true, marathonModuleOnly: false, marathonCount: 0, marathonTotal: allLectures.length });
+      log('⚡ Launching Video Marathon from active lecture at 16x speed...', 'info');
+      showToast('⚡ Video Marathon Active: Fast-forwarding at 16x speed...', 'info', true);
+      window.postMessage({ source: 'coursecraft-content', command: 'FAST_FORWARD' }, '*');
+      return;
+    }
 
-    const concurrency = Math.min(4, allLectures.length);
+    // Try API completion first (short videos will finish instantly)
+    showToast(`Checking ${allLectures.length} course lectures...`, 'info', true);
     let completed = 0;
-    let nextIdx = 0;
-
-    async function worker() {
-      while (nextIdx < allLectures.length) {
-        const i = nextIdx++;
-        const item = allLectures[i];
-        showToast(`Fast-tracking (${i + 1}/${allLectures.length}): ${item.item_name}`, 'info', true);
-        const success = await markLectureComplete(item);
-        if (success) completed++;
-      }
+    for (const item of allLectures) {
+      const success = await markLectureComplete(item);
+      if (success) completed++;
     }
 
-    const workers = [];
-    for (let w = 0; w < concurrency; w++) {
-      workers.push(worker());
+    const remaining = allLectures.filter(l => !l.isDone);
+    if (remaining.length > 0) {
+      const msg = `⚡ ${completed}/${allLectures.length} finished via API. Launching Video Marathon at 16x speed for remaining ${remaining.length} long lectures...`;
+      log(msg, 'info');
+      showToast(msg, 'info', true);
+
+      chrome.storage.local.set({
+        marathonActive: true,
+        marathonModuleOnly: false,
+        marathonCount: completed,
+        marathonTotal: allLectures.length
+      }, () => {
+        setTimeout(() => {
+          window.location.href = `https://www.coursera.org/learn/${currentCourseSlug}/lecture/${remaining[0].item_id}`;
+        }, 1400);
+      });
+      return;
     }
-    await Promise.all(workers);
 
     const msg = `🎉 Binge All Lectures complete: ${completed}/${allLectures.length} lectures finished!`;
     log(msg, 'success');
@@ -973,78 +985,82 @@
     const rawTime = item.timeCommitment || 180000;
     const durationMs = Math.floor(rawTime > 1000 ? rawTime : rawTime * 1000);
     const durationSec = Math.round(item.exactDuration || (durationMs / 1000));
-    const targetElapsedSec = Math.max(6, Math.ceil(durationSec / 15.0));
 
     try {
-      // Step A: Send Play event
-      const playUrl = `https://www.coursera.org/api/opencourse.v1/user/${currentUserId}/course/${slug}/item/${itemId}/lecture/videoEvents/play?autoEnroll=false`;
-      const playRes = await fetch(playUrl, {
-        method: 'POST',
-        headers: headers,
-        credentials: 'include',
-        body: JSON.stringify({ contentRequestBody: { viewedUpTo: 0 } })
-      }).catch(() => {});
+      let isCompleted = false;
 
-      if (playRes) {
-        log(`Lecture [${itemId}] Play Event: HTTP ${playRes.status}`, playRes.ok ? 'info' : 'warn');
+      // Endpoint A: onDemandLearnerMaterials.v1
+      if (courseId) {
+        try {
+          const matRes = await fetch('https://www.coursera.org/api/onDemandLearnerMaterials.v1', {
+            method: 'POST',
+            headers: headers,
+            credentials: 'include',
+            body: JSON.stringify({ courseId: courseId, itemId: itemId, isCompleted: true })
+          });
+          if (matRes.ok) isCompleted = true;
+        } catch (_) {}
       }
 
-      // Step B: Incremental Checkpoint Registration (60s intervals)
-      if (videoId && courseId) {
-        const progressId = `${currentUserId}~${courseId}~${videoId}`;
-        const stepSec = 60;
-        const checkPointsSec = [];
-        for (let t = stepSec; t < durationSec; t += stepSec) {
-          checkPointsSec.push(t);
-        }
-        if (!checkPointsSec.includes(durationSec)) checkPointsSec.push(durationSec);
-
-        for (let k = 0; k < checkPointsSec.length; k++) {
-          const secVal = checkPointsSec[k];
-          await fetch(`https://www.coursera.org/api/onDemandVideoProgresses.v1/${progressId}`, {
-            method: 'PUT',
+      // Endpoint B: onDemandLectureViews.v1
+      if (courseId) {
+        try {
+          const viewRes = await fetch('https://www.coursera.org/api/onDemandLectureViews.v1', {
+            method: 'POST',
             headers: headers,
             credentials: 'include',
             body: JSON.stringify({
-              viewedUpTo: secVal,
-              videoProgressId: progressId
+              courseId: courseId,
+              itemId: itemId,
+              isCompleted: true,
+              watchedUpTo: durationSec || 999999,
+              videoProgress: 1,
+              percentWatched: 1
             })
-          }).catch(() => {});
-
-          if (checkPointsSec.length > 1 && k < checkPointsSec.length - 1) {
-            await wait(80);
-          }
-        }
-
-        log(`Lecture [${itemId}] Registered ${checkPointsSec.length} checkpoints (${durationSec}s video target: ${targetElapsedSec}s at 15x)`, 'info');
+          });
+          if (viewRes.ok) isCompleted = true;
+        } catch (_) {}
       }
 
-      // Step C: Send Pause event
-      const pauseUrl = `https://www.coursera.org/api/opencourse.v1/user/${currentUserId}/course/${slug}/item/${itemId}/lecture/videoEvents/pause?autoEnroll=false`;
-      await fetch(pauseUrl, {
-        method: 'POST',
-        headers: headers,
-        credentials: 'include',
-        body: JSON.stringify({ contentRequestBody: { viewedUpTo: durationSec } })
-      }).catch(() => {});
+      // Endpoint C: opencourse.v1 ViewedUpto
+      if (currentUserId && slug) {
+        try {
+          const eventRes = await fetch(`https://www.coursera.org/api/opencourse.v1/user/${currentUserId}/course/${slug}/item/${itemId}/videoEvents`, {
+            method: 'POST',
+            headers: headers,
+            credentials: 'include',
+            body: JSON.stringify({ type: 'ViewedUpto', videoPosition: durationSec || 999999 })
+          });
+          if (eventRes.ok) isCompleted = true;
+        } catch (_) {}
+      }
 
-      // Step D: Send Ended event with calibrated 15x speed window
+      // Endpoint D: onDemandVideoProgresses.v1
+      if (videoId && courseId) {
+        const progressId = `${currentUserId}~${courseId}~${videoId}`;
+        await fetch(`https://www.coursera.org/api/onDemandVideoProgresses.v1/${progressId}`, {
+          method: 'PUT',
+          headers: headers,
+          credentials: 'include',
+          body: JSON.stringify({ viewedUpTo: durationSec, videoProgressId: progressId })
+        }).catch(() => {});
+      }
+
+      // Endpoint E: Try videoEvents/ended (works immediately for short clips < 180s)
       const endedResult = await sendEndedEventWithSyncRetry(currentUserId, slug, courseId, itemId, durationSec, durationMs, headers, startTime);
+      if (endedResult.success) isCompleted = true;
 
-      let isCompleted = endedResult.success;
-
-      // Step E: Trigger DOM video/button if active on screen
+      // Endpoint F: If active on screen, trigger DOM video fast-forward
       const videoEl = document.querySelector('video');
-      if (videoEl) {
+      if (videoEl && window.location.pathname.includes(itemId)) {
         try {
           videoEl.muted = true;
           videoEl.playbackRate = 16.0;
-          videoEl.currentTime = Math.max(0, (videoEl.duration || 10) - 0.5);
+          videoEl.currentTime = Math.max(0, (videoEl.duration || 10) - 2.5);
           await videoEl.play().catch(() => {});
-          await wait(600);
-          videoEl.dispatchEvent(new Event('timeupdate'));
-          videoEl.dispatchEvent(new Event('ended'));
-          videoEl.dispatchEvent(new Event('pause'));
+          await wait(500);
+          videoEl.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+          videoEl.dispatchEvent(new Event('ended', { bubbles: true }));
         } catch (_) {}
       }
 
@@ -1058,6 +1074,7 @@
       }
 
       if (isCompleted) {
+        item.isDone = true;
         log(`Lecture [${itemId}] Completed Successfully!`, 'success');
         return true;
       }
@@ -1768,7 +1785,8 @@ ${JSON.stringify(extractedQuestions)}`;
     }
 
     // Action mappings
-    if (action === 'completefullcourse') completeFullCourse();
+    if (action === 'stopmarathon') { chrome.storage.local.set({ marathonActive: false }); document.getElementById('coursecraft-marathon-banner')?.remove(); log('Marathon stopped.', 'info'); showToast('Video Marathon stopped.'); }
+      else if (action === 'completefullcourse') completeFullCourse();
     else if (action === 'lecture') completeActiveLecture();
     else if (action === 'skipvideoplus') completeAllLectures();
     else if (action === 'reading') completeReading();
@@ -1793,5 +1811,106 @@ ${JSON.stringify(extractedQuestions)}`;
   // Initial proactive context resolution
   ensureCourseContext().catch(() => {});
 
-  log('CourseCraft v4.5.0 active on page.', 'info');
-})();
+  
+  // -----------------------------------------------------------
+  // ACTIVE VIDEO MARATHON RUNNER & BANNER CONTROLLER
+  // -----------------------------------------------------------
+  function renderMarathonBanner(count, total) {
+    let banner = document.getElementById('coursecraft-marathon-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'coursecraft-marathon-banner';
+      banner.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:999999;' +
+        'background:linear-gradient(135deg,#1e1e38,#2a1b4e);color:#fff;' +
+        'font-family:Inter,system-ui,sans-serif;padding:10px 18px;border-radius:12px;' +
+        'display:flex;align-items:center;gap:12px;box-shadow:0 8px 30px rgba(0,0,0,0.6);' +
+        'border:1px solid rgba(255,255,255,0.15);';
+      document.body.appendChild(banner);
+    }
+    banner.innerHTML = `
+      <span style="font-size:18px">⚡</span>
+      <div>
+        <div style="font-size:13px;font-weight:700">CourseCraft Marathon Active</div>
+        <div style="font-size:11px;opacity:0.8">Fast-forwarding active lecture at 16x speed & auto-advancing...</div>
+      </div>
+      <button id="cc-stop-marathon-btn" style="margin-left:8px;background:rgba(239,68,68,0.3);border:1px solid #ef4444;color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:11px;font-weight:600">Stop</button>
+    `;
+
+    document.getElementById('cc-stop-marathon-btn')?.addEventListener('click', () => {
+      chrome.storage.local.set({ marathonActive: false });
+      banner.remove();
+      log('Marathon stopped by user.', 'info');
+      showToast('Video Marathon stopped.', 'info');
+    });
+  }
+
+  function initVideoMarathonRunner() {
+    chrome.storage.local.get(['marathonActive', 'marathonCount', 'marathonTotal'], async (data) => {
+      if (!data?.marathonActive) return;
+
+      const isLecture = window.location.pathname.includes('/lecture/');
+      if (isLecture) {
+        renderMarathonBanner(data.marathonCount || 0, data.marathonTotal || 0);
+        log('⚡ Marathon Runner: Lecture page loaded. Triggering 16x fast-forward...', 'info');
+
+        // Wait 800ms for player DOM to mount
+        setTimeout(() => {
+          window.postMessage({ source: 'coursecraft-content', command: 'FAST_FORWARD' }, '*');
+        }, 800);
+      } else if (window.location.pathname.includes('/supplement/') || window.location.pathname.includes('/quiz/')) {
+        // Auto advance non-video items during marathon
+        setTimeout(() => {
+          window.postMessage({ source: 'coursecraft-content', command: 'ADVANCE_NEXT' }, '*');
+        }, 1200);
+      } else if (window.location.pathname.includes('/home/')) {
+        // Finished course / returned to home
+        chrome.storage.local.set({ marathonActive: false });
+        log('🏁 Course Marathon Complete! Returned to course outline.', 'success');
+        showToast('🎉 Course Complete! Marathon finished all lectures.', 'success', true);
+      }
+    });
+  }
+
+  // Handle messages from rdr.js
+  window.addEventListener('message', (event) => {
+    if (event.data?.source !== 'coursecraft-bridge') return;
+    const { type, result, success } = event.data;
+
+    if (type === 'FAST_FORWARD_RESULT') {
+      if (result?.success) {
+        log(`⚡ Lecture completed in player at 16x speed! (${Math.round(result.duration || 0)}s duration)`, 'success');
+        showToast('Lecture complete! Advancing to next item in 1.5s...', 'success');
+
+        chrome.storage.local.get(['marathonActive', 'marathonCount'], (data) => {
+          if (data?.marathonActive) {
+            const nextCount = (data.marathonCount || 0) + 1;
+            chrome.storage.local.set({ marathonCount: nextCount });
+
+            setTimeout(() => {
+              log('Advancing to next course item...', 'info');
+              window.postMessage({ source: 'coursecraft-content', command: 'ADVANCE_NEXT' }, '*');
+
+              // Watchdog: If URL does not change after 6s (e.g. final video)
+              const currentUrl = window.location.href;
+              setTimeout(() => {
+                if (window.location.href === currentUrl) {
+                  log('🏁 Marathon Complete! Reached last lecture in sequence.', 'success');
+                  showToast('🎉 Marathon Complete! All lectures finished.', 'success', true);
+                  chrome.storage.local.set({ marathonActive: false });
+                  document.getElementById('coursecraft-marathon-banner')?.remove();
+                }
+              }, 6000);
+            }, 1500);
+          }
+        });
+      } else {
+        log(`Player fast-forward note: ${result?.reason || 'waiting for player'}`, 'info');
+      }
+    }
+  });
+
+  // Run marathon check on startup
+  setTimeout(initVideoMarathonRunner, 1000);
+
+    log('CourseCraft v4.6.0 active on page.', 'info');
+  })();

@@ -570,3 +570,60 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Marathon Banner */
+.marathon-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(168, 85, 247, 0.15));
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  padding: 8px 12px;
+  border-radius: 10px;
+  margin-bottom: 12px;
+  animation: pulseGlow 2s infinite ease-in-out;
+}
+@keyframes pulseGlow {
+  0%, 100% { border-color: rgba(239, 68, 68, 0.4); box-shadow: 0 0 10px rgba(239, 68, 68, 0.2); }
+  50% { border-color: rgba(168, 85, 247, 0.6); box-shadow: 0 0 14px rgba(168, 85, 247, 0.35); }
+}
+.marathon-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.marathon-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 8px #ef4444;
+  animation: blink 1s infinite;
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+.marathon-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary, #ffffff);
+}
+.marathon-subtitle {
+  font-size: 10px;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.7));
+}
+.btn-danger {
+  background: rgba(239, 68, 68, 0.85);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-danger:hover {
+  background: #dc2626;
+  transform: scale(1.05);
+}

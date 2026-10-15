@@ -7,6 +7,7 @@
 'use strict';
 
 document.addEventListener('DOMContentLoaded', () => {
+  initMarathonBanner();
   initTheme();
   initStatus();
   initUserIdEditor();
@@ -257,4 +258,41 @@ function showToast(msg, isError = false) {
   toastTimeout = setTimeout(() => {
     toast.classList.add('hidden');
   }, 2800);
+}
+
+function initMarathonBanner() {
+  // Marathon Mode Banner Poller
+  const marathonBanner = document.getElementById('marathonBanner');
+  const stopMarathonBtn = document.getElementById('stopMarathonBtn');
+
+  function checkMarathonStatus() {
+    chrome.storage.local.get(['marathonActive', 'marathonCount', 'marathonTotal'], (data) => {
+      if (data?.marathonActive) {
+        marathonBanner?.classList.remove('hidden');
+        const sub = document.getElementById('marathonSubtitle');
+        if (sub) {
+          sub.textContent = data.marathonTotal 
+            ? `Auto-advancing at 16x speed (${data.marathonCount || 0}/${data.marathonTotal} lectures)` 
+            : 'Auto-advancing at 16x speed';
+        }
+      } else {
+        marathonBanner?.classList.add('hidden');
+      }
+    });
+  }
+
+  stopMarathonBtn?.addEventListener('click', () => {
+    chrome.storage.local.set({ marathonActive: false }, () => {
+      marathonBanner?.classList.add('hidden');
+      showToast('Video Marathon stopped.');
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]?.id) {
+          chrome.tabs.sendMessage(tabs[0].id, { action: 'stopmarathon' }).catch(() => {});
+        }
+      });
+    });
+  });
+
+  setInterval(checkMarathonStatus, 1200);
+  checkMarathonStatus();
 }
