@@ -1,0 +1,20 @@
+{
+  "name": "coursecraft",
+  "version": "4.6.1",
+  "description": "Modern, open-source learning automation and study assistant browser extension for Coursera.",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint dist/scripts/**/*.js",
+    "build:zip": "node scripts/build-zip.mjs",
+    "release": "node scripts/build-zip.mjs"
+  },
+  "keywords": [
+    "coursera",
+    "browser-extension",
+    "learning-assistant",
+    "coursecraft",
+    "automation"
+  ],
+  "author": "CourseCraft Contributors",
+  "license": "MIT"
+}

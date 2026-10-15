@@ -1,7 +1,8 @@
 node_modules/
 src/
 webpack.config.js
-package*.json
+package-lock.json
+*.zip
 secure.js
 .prettierignore
 .prettierrc
@@ -9,3 +10,5 @@ eslint.config.js
 tsconfig.json
 yarn.lock
 *-lock.yaml
+.DS_Store
+Thumbs.db

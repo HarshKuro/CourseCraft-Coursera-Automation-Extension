@@ -1,0 +1,62 @@
+name: Build & Release Extension
+
+on:
+  push:
+    branches:
+      - release
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release Extension Package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Read Extension Version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./manifest.json').version")
+          echo "EXT_VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building CourseCraft release for version v$VERSION"
+
+      - name: Syntax & Integrity Checks
+        run: |
+          node --check dist/scripts/rdr.js
+          node --check dist/scripts/content.js
+          node --check dist/scripts/popup.js
+          node --check dist/scripts/background.js || true
+
+      - name: Create Production ZIP Archive
+        id: create_zip
+        run: |
+          ZIP_NAME="CourseCraft-v${{ steps.version.outputs.EXT_VERSION }}.zip"
+          zip -r "$ZIP_NAME" manifest.json dist LICENSE README.md HOW_IT_WORKS.md -x "*.DS_Store" "*__MACOSX*" "*.git*"
+          echo "ZIP_PATH=$ZIP_NAME" >> $GITHUB_OUTPUT
+          ls -lh "$ZIP_NAME"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.EXT_VERSION }}
+          name: "CourseCraft v${{ steps.version.outputs.EXT_VERSION }}"
+          files: ${{ steps.create_zip.outputs.ZIP_PATH }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
