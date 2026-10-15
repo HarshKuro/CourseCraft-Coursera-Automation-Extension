@@ -52,11 +52,14 @@ function initUserIdEditor() {
   const saveBtn = document.getElementById('saveManualUserIdBtn');
   const display = document.getElementById('userIdDisplay');
 
-  // Load current saved ID
-  chrome.storage.local.get(['customUserId', 'cachedUserId'], (data) => {
+  // Load current saved ID and email
+  chrome.storage.local.get(['customUserId', 'cachedUserId', 'cachedUserEmail', 'cachedUserName'], (data) => {
     const activeId = data.customUserId || data.cachedUserId || '161276145';
     if (display) display.textContent = activeId;
     if (input) input.value = activeId;
+    if (userNameDisplay) {
+      userNameDisplay.textContent = data.cachedUserEmail || data.cachedUserName || 'learner@coursera.org';
+    }
   });
 
   editBtn?.addEventListener('click', () => {
@@ -181,7 +184,9 @@ function initStatus() {
         if (res.courseName && titleEl) titleEl.textContent = res.courseName;
         if (subtitleEl) subtitleEl.textContent = res.itemCount ? `${res.itemCount} course items ready` : 'Ready for automation';
         if (res.userId && userDisplay) userDisplay.textContent = res.userId;
-        if (res.userName && userNameDisplay) userNameDisplay.textContent = res.userName;
+        if ((res.userEmail || res.userName) && userNameDisplay) {
+          userNameDisplay.textContent = res.userEmail || res.userName;
+        }
       }
     });
   });

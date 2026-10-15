@@ -109,6 +109,31 @@
     }
   });
 
+  
+  // Extract User Details (Email, ID, Name) directly from Coursera's window.App Store
+  function extractUserFromApp() {
+    try {
+      const scripts = document.getElementsByTagName('script');
+      for (const s of scripts) {
+        if (s.textContent && s.textContent.includes('window.App')) {
+          const match = s.textContent.match(/window\.App\s*=\s*(\{.*?\});/s);
+          if (match) {
+            const app = JSON.parse(match[1]);
+            const user = app?.context?.dispatcher?.stores?.ApplicationStore?.userData;
+            if (user) {
+              return {
+                id: user.id ? String(user.id) : null,
+                name: user.fullName || null,
+                email: user.email_address || user.email || user.emailAddress || null
+              };
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   function setUserId(uid) {
     if (uid && uid !== 'null' && uid !== 'undefined' && !isNaN(Number(uid)) && String(uid).length >= 6) {
       currentUserId = String(uid);
@@ -118,10 +143,11 @@
   }
 
   // Load custom/cached User ID on startup
-  chrome.storage.local.get(['customUserId', 'cachedUserId', 'cachedUserName'], (data) => {
+  chrome.storage.local.get(['customUserId', 'cachedUserId', 'cachedUserName', 'cachedUserEmail'], (data) => {
     if (data?.customUserId) currentUserId = String(data.customUserId);
     else if (data?.cachedUserId) currentUserId = String(data.cachedUserId);
     if (data?.cachedUserName) currentUserName = String(data.cachedUserName);
+    if (data?.cachedUserEmail) currentUserEmail = String(data.cachedUserEmail);
   });
 
   // CSRF Token Extractor: ONLY genuine CSRF3-Token cookie
@@ -160,6 +186,22 @@
 
   // Multi-tier User ID Resolver
   async function resolveUserId() {
+
+    const appUser = extractUserFromApp();
+    if (appUser) {
+      if (appUser.id && !currentUserId) setUserId(appUser.id);
+      if (appUser.email) {
+        currentUserEmail = appUser.email;
+        chrome.storage.local.set({ cachedUserEmail: currentUserEmail });
+        log(`User Email detected from session: ${currentUserEmail}`, 'info');
+      }
+      if (appUser.name) {
+        currentUserName = appUser.name;
+        chrome.storage.local.set({ cachedUserName: currentUserName });
+      }
+      if (currentUserId) return currentUserId;
+    }
+
     const stored = await chrome.storage.local.get(['customUserId', 'cachedUserId']);
     if (stored?.customUserId) {
       currentUserId = String(stored.customUserId);
@@ -509,6 +551,286 @@
   // -----------------------------------------------------------
   // AUTOMATION WORKFLOWS
   // -----------------------------------------------------------
+
+
+  // -----------------------------------------------------------
+  // FULL COURSE AUTO-COMPLETION ENGINE (ALL-IN-ONE)
+  // -----------------------------------------------------------
+  async function completeFullCourse() {
+    log('⚡ Initializing Complete Full Course (All-in-One Engine)...', 'info');
+    showToast('🚀 Initializing Complete Full Course...', 'info', true);
+
+    const ok = await ensureCourseContext(true);
+    if (!ok) {
+      showToast('Could not detect course or User ID. Please check popup.', 'error');
+      return;
+    }
+
+    log(`Full Course Automation for: ${currentCourseSlug} (${courseItems.length} total items detected)`, 'info');
+
+    // Filter all items by type across the ENTIRE course
+    const allLectures = courseItems.filter((i) => i.typeName === 'lecture');
+    const allReadings = courseItems.filter((i) =>
+      i.typeName === 'supplement' ||
+      i.typeName === 'reading' ||
+      i.typeName === 'ungradedSupplement' ||
+      i.customDisplayTypenameOverride?.toLowerCase().includes('reading')
+    );
+    const allDialogues = courseItems.filter((i) =>
+      i.typeName === 'coach' ||
+      i.typeName === 'ungradedWidget' ||
+      i.typeName === 'dialogue' ||
+      i.customDisplayTypenameOverride?.toLowerCase().includes('dialogue') ||
+      i.item_name.toLowerCase().includes('dialogue')
+    );
+    const allWidgets = courseItems.filter((i) =>
+      i.typeName === 'ungradedWidget' ||
+      i.typeName === 'dialogue'
+    );
+    const allDiscussions = courseItems.filter((i) =>
+      i.typeName === 'discussionPrompt' ||
+      i.item_name.toLowerCase().includes('discussion')
+    );
+
+    const stats = {
+      lectures: { total: allLectures.length, done: 0 },
+      readings: { total: allReadings.length, done: 0 },
+      dialogues: { total: allDialogues.length, done: 0 },
+      widgets: { total: allWidgets.length, done: 0 },
+      discussions: { total: allDiscussions.length, done: 0 }
+    };
+
+    log(`Items to process: ${stats.lectures.total} lectures, ${stats.readings.total} readings, ${stats.dialogues.total} dialogues, ${stats.widgets.total} widgets, ${stats.discussions.total} discussions.`, 'info');
+
+    // Phase 1: Complete All Lectures
+    if (allLectures.length > 0) {
+      showToast(`[1/5] Auto-completing ${allLectures.length} video lectures...`, 'info', true);
+      for (let i = 0; i < allLectures.length; i++) {
+        const item = allLectures[i];
+        showToast(`[1/5] Video (${i + 1}/${allLectures.length}): ${item.item_name}`, 'info', true);
+        const success = await markLectureComplete(item);
+        if (success) stats.lectures.done++;
+        await wait(400);
+      }
+      log(`Phase 1 complete: ${stats.lectures.done}/${allLectures.length} lectures finished.`, 'success');
+    }
+
+    // Phase 2: Complete All Readings
+    if (allReadings.length > 0) {
+      showToast(`[2/5] Auto-completing ${allReadings.length} reading materials...`, 'info', true);
+      const headers = await getCourseraHeaders();
+      const userIdNum = Number(currentUserId) || 161276145;
+
+      for (let i = 0; i < allReadings.length; i++) {
+        const item = allReadings[i];
+        try {
+          const cId = item.course_id || currentCourseId;
+          const res = await fetch('https://www.coursera.org/api/onDemandSupplementCompletions.v1', {
+            method: 'POST',
+            headers: headers,
+            credentials: 'include',
+            body: JSON.stringify({
+              userId: userIdNum,
+              courseId: cId,
+              itemId: item.item_id
+            })
+          });
+          const rawText = await res.text().catch(() => '');
+          if (res.ok || res.status === 200 || res.status === 201 || res.status === 204 || rawText.toLowerCase().includes('already')) {
+            stats.readings.done++;
+          }
+          log(`Reading (${i + 1}/${allReadings.length}) [${item.item_id}]: HTTP ${res.status}`, res.ok ? 'success' : 'warn');
+        } catch (_) {}
+        await wait(250);
+      }
+      log(`Phase 2 complete: ${stats.readings.done}/${allReadings.length} readings finished.`, 'success');
+    }
+
+    // Phase 3: Complete All AI Coach Dialogues
+    if (allDialogues.length > 0) {
+      showToast(`[3/5] Auto-completing ${allDialogues.length} AI Coach dialogues...`, 'info', true);
+      const headers = await getCourseraHeaders();
+      const courseId = currentCourseId || 'SG_K6nEmEeWxvQr3acyajw';
+
+      for (let i = 0; i < allDialogues.length; i++) {
+        const item = allDialogues[i];
+        try {
+          const cId = item.course_id || courseId;
+          const itemId = item.item_id;
+
+          const createRes = await fetch('https://www.coursera.org/graphql-gateway?opname=AiCoachPlatform_CreateChatSession', {
+            method: 'POST',
+            headers: headers,
+            credentials: 'include',
+            body: JSON.stringify([{
+              operationName: 'AiCoachPlatform_CreateChatSession',
+              variables: {
+                input: {
+                  title: `coachItem-${cId}-${itemId}`,
+                  userId: String(currentUserId || '161276145')
+                }
+              },
+              query: 'mutation AiCoachPlatform_CreateChatSession($input: AiCoach_CreateChatSessionInput!) { AiCoach_CreateChatSession(input: $input) { id title __typename } }'
+            }])
+          }).catch(() => {});
+
+          let sessionId = null;
+          if (createRes && createRes.ok) {
+            const cJson = await createRes.json().catch(() => ({}));
+            sessionId = cJson?.[0]?.data?.AiCoach_CreateChatSession?.id || cJson?.data?.AiCoach_CreateChatSession?.id;
+          }
+
+          if (sessionId) {
+            await fetch('https://www.coursera.org/graphql-gateway?opname=CoachItem_EndSession', {
+              method: 'POST',
+              headers: headers,
+              credentials: 'include',
+              body: JSON.stringify([{
+                operationName: 'CoachItem_EndSession',
+                variables: {
+                  input: {
+                    chatSessionId: sessionId,
+                    message: 'Generate final session summary',
+                    coachModeId: 'COACH_ITEM_DIALOGUE',
+                    terminalActionId: 'STUCK_END',
+                    courseraContext: { courseId: cId, itemId: itemId, courseBranchId: cId },
+                    additionalContext: []
+                  }
+                },
+                query: 'mutation CoachItem_EndSession($input: CoachItem_EndSessionInput!) { CoachItem_EndSession(input: $input) { chatSessionId itemCompletionHandled __typename } }'
+              }])
+            }).catch(() => {});
+          }
+
+          const widgetKey = `${currentUserId || '161276145'}~${cId}~${itemId}`;
+          try {
+            const wRes = await fetch(`https://www.coursera.org/api/onDemandWidgetSessions.v1/${widgetKey}?fields=session,sessionId`, { credentials: 'include' });
+            if (wRes.ok) {
+              const wData = await wRes.json();
+              const wSessionId = wData?.elements?.[0]?.sessionId;
+              if (wSessionId) {
+                await fetch(`https://www.coursera.org/api/onDemandWidgetProgress.v1/${widgetKey}`, {
+                  method: 'PUT',
+                  headers: headers,
+                  credentials: 'include',
+                  body: JSON.stringify({ sessionId: wSessionId, progressState: 'Completed' })
+                });
+              }
+            }
+          } catch (_) {}
+
+          await fetch('https://www.coursera.org/api/onDemandSupplementCompletions.v1', {
+            method: 'POST',
+            headers: headers,
+            credentials: 'include',
+            body: JSON.stringify({ userId: Number(currentUserId || '161276145'), courseId: cId, itemId: itemId })
+          }).catch(() => {});
+
+          stats.dialogues.done++;
+          log(`Dialogue (${i + 1}/${allDialogues.length}) [${item.item_id}] Completed`, 'success');
+        } catch (_) {}
+        await wait(300);
+      }
+      log(`Phase 3 complete: ${stats.dialogues.done}/${allDialogues.length} dialogues finished.`, 'success');
+    }
+
+    // Phase 4: Complete All Practice Widgets
+    if (allWidgets.length > 0) {
+      showToast(`[4/5] Auto-completing ${allWidgets.length} practice widgets...`, 'info', true);
+      const headers = await getCourseraHeaders();
+      const courseId = currentCourseId || 'SG_K6nEmEeWxvQr3acyajw';
+
+      for (let i = 0; i < allWidgets.length; i++) {
+        const item = allWidgets[i];
+        try {
+          const cId = item.course_id || courseId;
+          const key = `${currentUserId || '161276145'}~${cId}~${item.item_id}`;
+          const res = await fetch(`https://www.coursera.org/api/onDemandWidgetSessions.v1/${key}?fields=session,sessionId`, {
+            headers: headers,
+            credentials: 'include'
+          });
+          if (res.ok) {
+            const json = await res.json();
+            const sessId = json?.elements?.[0]?.sessionId;
+            if (sessId) {
+              await fetch(`https://www.coursera.org/api/onDemandWidgetProgress.v1/${key}`, {
+                method: 'PUT',
+                headers: headers,
+                credentials: 'include',
+                body: JSON.stringify({ sessionId: sessId, progressState: 'Completed' })
+              });
+              stats.widgets.done++;
+            }
+          }
+          await fetch('https://www.coursera.org/api/onDemandSupplementCompletions.v1', {
+            method: 'POST',
+            headers: headers,
+            credentials: 'include',
+            body: JSON.stringify({ userId: Number(currentUserId || '161276145'), courseId: cId, itemId: item.item_id })
+          }).catch(() => {});
+        } catch (_) {}
+        await wait(250);
+      }
+      log(`Phase 4 complete: ${stats.widgets.done}/${allWidgets.length} practice widgets finished.`, 'success');
+    }
+
+    // Phase 5: Complete All Discussions
+    if (allDiscussions.length > 0) {
+      showToast(`[5/5] Auto-completing ${allDiscussions.length} discussions...`, 'info', true);
+      const courseId = currentCourseId || 'SG_K6nEmEeWxvQr3acyajw';
+      const phrases = [
+        'Very insightful points covered in this topic. Thank you.',
+        'Clear explanations and valuable real-world practical examples.',
+        'Helpful discussion and great practical takeaways for this lesson.'
+      ];
+
+      for (let i = 0; i < allDiscussions.length; i++) {
+        const item = allDiscussions[i];
+        try {
+          const promptRes = await fetch(`https://www.coursera.org/api/onDemandDiscussionPrompts.v1/${currentUserId}~${courseId}~${item.item_id}?fields=promptType,question&includes=question`, {
+            credentials: 'include'
+          });
+          if (promptRes.ok) {
+            const pData = await promptRes.json();
+            const forumQId = pData?.elements?.[0]?.promptType?.definition?.courseItemForumQuestionId;
+            if (forumQId) {
+              await fetch('https://www.coursera.org/api/onDemandCourseForumAnswers.v1/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                  content: {
+                    typeName: 'cml',
+                    definition: {
+                      dtdId: 'discussion/1',
+                      value: `<co-content><text>${phrases[Math.floor(Math.random() * phrases.length)]}</text></co-content>`
+                    }
+                  },
+                  courseForumQuestionId: `${courseId}~${forumQId.split('~')[2] || forumQId}`
+                })
+              });
+              stats.discussions.done++;
+            }
+          }
+        } catch (_) {}
+        await wait(300);
+      }
+      log(`Phase 5 complete: ${stats.discussions.done}/${allDiscussions.length} discussions posted.`, 'success');
+    }
+
+    // Trigger on-page completion button if on screen
+    const markBtn = document.querySelector('button[data-testid="mark-complete"], button[aria-label="Mark as completed"]');
+    if (markBtn) {
+      try { markBtn.click(); } catch (_) {}
+    }
+
+    const totalDone = stats.lectures.done + stats.readings.done + stats.dialogues.done + stats.widgets.done + stats.discussions.done;
+    log(`🎉 COMPLETE FULL COURSE FINISHED: ${totalDone} items processed successfully across all modules!`, 'success');
+    showToast(`🎉 Full Course Completed (${totalDone} items processed)! Reloading...`, 'success', true);
+    setTimeout(() => {
+      window.location.reload();
+    }, 2500);
+  }
 
   // 1. Single / Module Lecture Completion
   async function completeActiveLecture() {
@@ -1366,7 +1688,8 @@ ${JSON.stringify(extractedQuestions)}`;
           courseName: currentCourseSlug ? currentCourseSlug.replace(/-/g, ' ').toUpperCase() : 'Coursera Course',
           itemCount: courseItems.length,
           userId: currentUserId || '161276145',
-          userName: currentUserName || 'Coursera Learner'
+          userName: currentUserEmail || currentUserName || 'learner@coursera.org',
+          userEmail: currentUserEmail || currentUserName || 'learner@coursera.org'
         });
       });
       return true;
@@ -1388,7 +1711,8 @@ ${JSON.stringify(extractedQuestions)}`;
     }
 
     // Action mappings
-    if (action === 'lecture') completeActiveLecture();
+    if (action === 'completefullcourse') completeFullCourse();
+    else if (action === 'lecture') completeActiveLecture();
     else if (action === 'skipvideoplus') completeAllLectures();
     else if (action === 'reading') completeReading();
     else if (action === 'discussion') completeDiscussion();

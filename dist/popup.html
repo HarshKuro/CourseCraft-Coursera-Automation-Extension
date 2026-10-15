@@ -8,28 +8,27 @@
 </head>
 <body class="theme-dark">
   <div class="popup-container">
-    <!-- Header -->
+    <!-- Top Bar -->
     <header class="app-header">
       <div class="brand">
-        <div class="brand-icon">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round" />
+        <div class="brand-logo">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
           </svg>
         </div>
         <div class="brand-text">
-          <h1>CourseCraft</h1>
-          <span class="badge-free">100% Free & Local</span>
+          <span class="brand-name">CourseCraft</span>
+          <span class="brand-badge">PRO FREE</span>
         </div>
       </div>
       <div class="header-actions">
         <button id="themeToggle" class="icon-btn" title="Toggle Theme" aria-label="Toggle Theme">
-          <svg id="themeIcon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="5" />
-            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+          <svg id="themeIcon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
           </svg>
         </button>
-        <button id="settingsBtn" class="icon-btn" title="Open Settings" aria-label="Open Settings">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+        <button id="openSettings" class="icon-btn" title="Settings" aria-label="Settings">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
@@ -37,23 +36,22 @@
       </div>
     </header>
 
-    <!-- User Account & Course Info Card -->
-    <div id="accountCard" class="account-card">
-      <div class="user-row">
-        <div class="user-avatar">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-            <circle cx="12" cy="7" r="4"/>
+    <!-- Account & Context Card -->
+    <div class="status-card" id="statusCard">
+      <!-- User Account Info Row -->
+      <div class="user-id-row">
+        <div class="user-avatar-badge">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
           </svg>
         </div>
-        <div class="user-meta">
-          <div class="user-name-line">
-            <span id="userNameDisplay" class="user-name">Coursera Learner</span>
-            <span id="sessionBadge" class="session-badge badge-active">Active</span>
-          </div>
-          <div class="user-id-line">
-            <span class="id-label">User ID:</span>
+        <div class="user-account-details">
+          <div class="user-name-title" id="userNameDisplay" title="Learner Account Email">learner@coursera.org</div>
+          <div class="user-id-chip">
+            <span class="user-id-label">ID:</span>
             <span id="userIdDisplay" class="user-id-value">161276145</span>
+            <span class="session-badge">Active</span>
             <button id="editUserIdBtn" class="edit-id-btn" title="Edit / Change User ID" aria-label="Edit User ID">
               <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
@@ -82,7 +80,24 @@
     <main class="actions-section">
       <div class="section-label">Automate Tasks</div>
       <div class="action-grid" id="actionGrid">
-        <!-- Lecture -->
+        
+        <!-- Hero: Complete Full Course -->
+        <button class="action-card full-course-hero-card" data-action="completefullcourse">
+          <div class="card-icon card-gold">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+          </div>
+          <div class="card-content">
+            <div class="card-title-row">
+              <span class="card-title hero-title">Complete Full Course</span>
+              <span class="badge-all-in-one">ALL-IN-ONE</span>
+            </div>
+            <span class="card-desc">Batch finish all lectures, readings, dialogues, widgets & discussions in 1 click</span>
+          </div>
+        </button>
+
+        <!-- Fast-Track Lecture -->
         <button class="action-card" data-action="lecture">
           <div class="card-icon card-blue">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
@@ -90,12 +105,12 @@
             </svg>
           </div>
           <div class="card-content">
-            <span class="card-title">Watch Lecture</span>
-            <span class="card-desc">Complete lectures in section</span>
+            <span class="card-title">Fast-Track Lecture</span>
+            <span class="card-desc">Instant watch validation & sync</span>
           </div>
         </button>
 
-        <!-- Skip Video+ -->
+        <!-- Binge All Lectures -->
         <button class="action-card highlight-card" data-action="skipvideoplus">
           <div class="card-icon card-purple">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
@@ -104,12 +119,12 @@
             </svg>
           </div>
           <div class="card-content">
-            <span class="card-title">Skip Video+</span>
-            <span class="card-desc">Bulk finish all course videos</span>
+            <span class="card-title">Binge All Lectures</span>
+            <span class="card-desc">Auto-watch every video in course</span>
           </div>
         </button>
 
-        <!-- Reading -->
+        <!-- Speed-Read Modules -->
         <button class="action-card" data-action="reading">
           <div class="card-icon card-emerald">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
@@ -118,12 +133,12 @@
             </svg>
           </div>
           <div class="card-content">
-            <span class="card-title">Read Material</span>
-            <span class="card-desc">Mark reading items complete</span>
+            <span class="card-title">Speed-Read Modules</span>
+            <span class="card-desc">Auto-complete readings & guides</span>
           </div>
         </button>
 
-        <!-- Discussion -->
+        <!-- Auto-Engage Discussions -->
         <button class="action-card" data-action="discussion">
           <div class="card-icon card-amber">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
@@ -131,12 +146,12 @@
             </svg>
           </div>
           <div class="card-content">
-            <span class="card-title">Discussion</span>
-            <span class="card-desc">Auto-post peer response</span>
+            <span class="card-title">Auto-Engage Forums</span>
+            <span class="card-desc">Submit intelligent peer response</span>
           </div>
         </button>
 
-        <!-- Dialogue / AI Coach -->
+        <!-- AI Dialogue Solver -->
         <button class="action-card" data-action="dialogue">
           <div class="card-icon card-teal">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
@@ -145,12 +160,12 @@
             </svg>
           </div>
           <div class="card-content">
-            <span class="card-title">AI Coach Dialogue</span>
-            <span class="card-desc">End & complete dialogue</span>
+            <span class="card-title">AI Dialogue Solver</span>
+            <span class="card-desc">Solve AI Coach & chat milestones</span>
           </div>
         </button>
 
-        <!-- Practice Widget -->
+        <!-- Auto-Solve Practice -->
         <button class="action-card" data-action="ungradedplugin">
           <div class="card-icon card-rose">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
@@ -159,12 +174,12 @@
             </svg>
           </div>
           <div class="card-content">
-            <span class="card-title">Practice Widget</span>
-            <span class="card-desc">Solve ungraded exercises</span>
+            <span class="card-title">Auto-Solve Practice</span>
+            <span class="card-desc">Submit all sandbox exercises</span>
           </div>
         </button>
 
-        <!-- Quiz Assistant (Full Span) -->
+        <!-- Smart Exam Copilot (Full Span) -->
         <button class="action-card card-span-2" data-action="quiz">
           <div class="card-icon card-indigo">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
@@ -175,14 +190,14 @@
           </div>
           <div class="card-content">
             <div class="card-title-row">
-              <span class="card-title">AI Quiz Assistant</span>
+              <span class="card-title">Smart Exam Copilot</span>
               <span class="shortcut-tag">Alt + Z</span>
             </div>
-            <span class="card-desc">Solve graded quizzes, auto-fill Honor Code & name</span>
+            <span class="card-desc">AI quiz guidance with Gemini, auto-fills Honor Code & signs name</span>
           </div>
         </button>
 
-        <!-- Backup -->
+        <!-- Archive Vault -->
         <button class="action-card" data-action="coursebackup">
           <div class="card-icon card-sky">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
@@ -192,12 +207,12 @@
             </svg>
           </div>
           <div class="card-content">
-            <span class="card-title">Course Backup</span>
-            <span class="card-desc">Export outline & resources</span>
+            <span class="card-title">Archive Vault (ZIP)</span>
+            <span class="card-desc">Download complete offline course</span>
           </div>
         </button>
 
-        <!-- Shareable Link -->
+        <!-- Export Clean URL -->
         <button class="action-card" data-action="shareablelink">
           <div class="card-icon card-violet">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
@@ -206,8 +221,8 @@
             </svg>
           </div>
           <div class="card-content">
-            <span class="card-title">Shareable Link</span>
-            <span class="card-desc">Copy peer assignment link</span>
+            <span class="card-title">Export Clean URL</span>
+            <span class="card-desc">Copy link with no tracking params</span>
           </div>
         </button>
       </div>
