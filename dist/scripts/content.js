@@ -463,44 +463,43 @@
   // -----------------------------------------------------------
   // MULTI-STRATEGY VIDEO ENDED DISPATCHER
   // -----------------------------------------------------------
-  async function sendEndedEventMulti(userId, slug, courseId, itemId, durationSec, headers) {
-    const targetUrls = [
-      `https://www.coursera.org/api/opencourse.v1/user/${userId}/course/${slug}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`,
-      `https://www.coursera.org/api/opencourse.v1/user/${userId}/course/${courseId}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`,
-      `https://www.coursera.org/api/opencourse.v1/user/${userId}/course/${slug}/item/${itemId}/lecture/videoEvents/ended`
-    ];
+  // -----------------------------------------------------------
+  // COURSERA LECTURE ENDED EVENT DISPATCHER WITH SYNC RETRY
+  // -----------------------------------------------------------
+  async function sendEndedEventWithSyncRetry(userId, slug, courseId, itemId, headers, maxRetries = 4, retryDelayMs = 2800) {
+    const url = `https://www.coursera.org/api/opencourse.v1/user/${userId}/course/${slug}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`;
+    const payload = JSON.stringify({ contentRequestBody: {} });
 
-    const targetBodies = [
-      JSON.stringify({ contentRequestBody: {} }),
-      JSON.stringify({ contentRequestBody: { viewedUpTo: durationSec } })
-    ];
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: headers,
+          credentials: 'include',
+          body: payload
+        });
 
-    for (let u = 0; u < targetUrls.length; u++) {
-      for (let b = 0; b < targetBodies.length; b++) {
-        try {
-          const res = await fetch(targetUrls[u], {
-            method: 'POST',
-            headers: headers,
-            credentials: 'include',
-            body: targetBodies[b]
-          });
+        const rawText = await res.text();
+        let data = {};
+        try { data = JSON.parse(rawText); } catch (_) {}
+        const progressState = data?.itemProgress?.progressState;
 
-          const rawText = await res.text();
-          let data = {};
-          try { data = JSON.parse(rawText); } catch (_) {}
-          const progressState = data?.itemProgress?.progressState;
+        log(`Ended [${itemId}] Attempt ${attempt}/${maxRetries}: HTTP ${res.status} | State: ${progressState || 'none'} | Body: ${rawText.slice(0, 80)}`, res.ok ? 'info' : 'warn');
 
-          log(`Ended [${itemId}] (T${u + 1}B${b + 1}): HTTP ${res.status} | Body: ${rawText.slice(0, 120)}`, res.ok ? 'info' : 'warn');
-
-          if (res.ok && progressState === 'Completed') {
-            return { success: true, progressState: 'Completed' };
-          }
-          if (res.ok || res.status === 200 || res.status === 201 || res.status === 204) {
-            return { success: true, progressState: progressState || 'ok' };
-          }
-        } catch (err) {
-          log(`Ended [${itemId}] Error: ${err.message}`, 'warn');
+        if (res.ok && (progressState === 'Completed' || res.status === 200 || res.status === 204)) {
+          return { success: true, progressState: progressState || 'Completed' };
         }
+
+        // When status is 400 with "validation failed: not watched enough" or progressState is 'Started',
+        // Coursera's background worker has not yet committed onDemandVideoProgresses to the replica.
+        if ((res.status === 400 || progressState === 'Started') && attempt < maxRetries) {
+          log(`Lecture [${itemId}] Waiting ${retryDelayMs / 1000}s for Coursera DB sync (retry ${attempt + 1})...`, 'info');
+          await wait(retryDelayMs);
+          continue;
+        }
+      } catch (err) {
+        log(`Ended [${itemId}] Error: ${err.message}`, 'warn');
+        if (attempt < maxRetries) await wait(2000);
       }
     }
 
@@ -550,7 +549,7 @@
       showToast(`Processing (${i + 1}/${targets.length}): ${item.item_name}`, 'info', true);
       const success = await markLectureComplete(item);
       if (success) completed++;
-      await wait(400);
+      await wait(500);
     }
 
     log(`Lectures Finished: ${completed}/${targets.length} completed.`, completed > 0 ? 'success' : 'warn');
@@ -586,7 +585,7 @@
       showToast(`Processing (${i + 1}/${allVideos.length}): ${item.item_name}`, 'info', true);
       const success = await markLectureComplete(item);
       if (success) completed++;
-      await wait(350);
+      await wait(500);
     }
 
     log(`Skip Video+ completed: ${completed}/${allVideos.length} finished.`, 'success');
@@ -596,7 +595,7 @@
     }, 2000);
   }
 
-  // Single Lecture API Mark (Full Lifecycle & Multi-Strategy Fallback)
+  // Single Lecture API Mark (Full Lifecycle & Coursera DB Sync)
   async function markLectureComplete(item) {
     if (!currentUserId || !item) return false;
     const slug = item.open_course_slug || currentCourseSlug;
@@ -612,8 +611,12 @@
       log(`Lecture [${itemId}]: Found Video ID ${videoId}`, 'info');
     }
 
-    const rawTime = item.timeCommitment || 120000;
-    const durationSec = Math.floor(rawTime > 1000 ? rawTime / 1000 : rawTime);
+    // 2. CRITICAL: Calculate duration in MILLISECONDS (Coursera stores progress in ms!)
+    // If rawTime > 1000, it is already milliseconds (e.g. 192000 ms = 192s).
+    // If rawTime <= 1000 and > 0, it was seconds, so multiply by 1000.
+    const rawTime = item.timeCommitment || 180000;
+    const durationMs = Math.floor(rawTime > 1000 ? rawTime : rawTime * 1000);
+    const durationSec = Math.round(durationMs / 1000);
 
     try {
       // Step A: Send Play event
@@ -629,7 +632,7 @@
         log(`Lecture [${itemId}] Play Event: HTTP ${playRes.status}`, playRes.ok ? 'info' : 'warn');
       }
 
-      // Step B: Send Video Progress PUT
+      // Step B: Send Video Progress PUT with exact millisecond duration
       if (videoId && courseId) {
         const progressId = `${currentUserId}~${courseId}~${videoId}`;
         const putRes = await fetch(`https://www.coursera.org/api/onDemandVideoProgresses.v1/${progressId}`, {
@@ -637,53 +640,57 @@
           headers: headers,
           credentials: 'include',
           body: JSON.stringify({
-            viewedUpTo: durationSec,
+            viewedUpTo: durationMs,
             videoProgressId: progressId
           })
         }).catch(() => {});
 
         if (putRes) {
-          log(`Lecture [${itemId}] Progress PUT (${durationSec}s): HTTP ${putRes.status}`, putRes.ok ? 'info' : 'warn');
+          log(`Lecture [${itemId}] Progress PUT (${durationSec}s / ${durationMs}ms): HTTP ${putRes.status}`, putRes.ok ? 'info' : 'warn');
         }
       }
 
-      // Step C: Send multi-strategy ended event
-      const endedResult = await sendEndedEventMulti(currentUserId, slug, courseId, itemId, durationSec, headers);
+      // Step C: CRITICAL 2-SECOND DELAY allowing Coursera's background worker to commit progress
+      await wait(2000);
 
-      // Step D: Supplement completion fallback
-      try {
-        const supRes = await fetch('https://www.coursera.org/api/onDemandSupplementCompletions.v1', {
-          method: 'POST',
-          headers: headers,
-          credentials: 'include',
-          body: JSON.stringify({
-            userId: Number(currentUserId) || 161276145,
-            courseId: courseId,
-            itemId: itemId
-          })
-        });
-        log(`Lecture [${itemId}] Supplement Completion: HTTP ${supRes.status}`, supRes.ok ? 'info' : 'warn');
-      } catch (_) {}
+      // Step D: Send Ended event with retry loop (waiting up to 4 attempts if DB is syncing)
+      const endedResult = await sendEndedEventWithSyncRetry(currentUserId, slug, courseId, itemId, headers, 4, 3000);
 
-      // Step E: Trigger DOM mark complete button if active page
-      const markBtn = document.querySelector('button[data-testid="mark-complete"], button[aria-label="Mark as completed"]');
-      if (markBtn) {
-        try { markBtn.click(); } catch (_) {}
+      let isCompleted = endedResult.success;
+
+      // Step E: Trigger DOM video/button if active page
+      const videoEl = document.querySelector('video');
+      if (videoEl) {
+        try {
+          videoEl.currentTime = videoEl.duration || 1000;
+          videoEl.dispatchEvent(new Event('timeupdate'));
+          videoEl.dispatchEvent(new Event('ended'));
+          videoEl.dispatchEvent(new Event('pause'));
+        } catch (_) {}
       }
 
-      if (endedResult.success) {
-        log(`Lecture [${itemId}]: Verified COMPLETED!`, 'success');
+      const markBtn = document.querySelector('button[data-testid="mark-complete"], button[aria-label="Mark as completed"], button[data-testid="mark-as-completed-button"]');
+      if (markBtn) {
+        try {
+          markBtn.click();
+          isCompleted = true;
+          log(`Lecture [${itemId}]: Triggered DOM mark-complete button`, 'info');
+        } catch (_) {}
+      }
+
+      if (isCompleted) {
+        log(`Lecture [${itemId}] Completed Successfully!`, 'success');
         return true;
       }
 
       return false;
     } catch (err) {
-      log(`Lecture [${itemId}] Exception: ${err.message}`, 'error');
+      log(`Lecture [${itemId}] Processing Error: ${err.message}`, 'error');
       return false;
     }
   }
 
-  // 3. Complete Reading Materials
+  // 3. Complete Reading Materials (Supplements)
   async function completeReading() {
     log('Connecting to course data for Readings...', 'info');
     showToast('Connecting to course data...', 'info');
@@ -698,6 +705,20 @@
     if (readings.length === 0) {
       const domItems = scanDomItems().filter((d) => d.typeName === 'supplement');
       if (domItems.length > 0) readings = domItems;
+    }
+
+    // Check if viewing a reading/supplement directly on current page
+    const directMatch = window.location.pathname.match(/\/(supplement|item)\/([a-zA-Z0-9_-]+)/);
+    if (directMatch) {
+      const activeId = directMatch[2];
+      if (!readings.some((r) => r.item_id === activeId)) {
+        readings.unshift({
+          item_id: activeId,
+          item_name: document.title || 'Current Reading',
+          course_id: currentCourseId,
+          open_course_slug: currentCourseSlug
+        });
+      }
     }
 
     if (readings.length === 0) {
@@ -726,23 +747,20 @@
           })
         });
 
-        if (res.ok || res.status === 200 || res.status === 201 || res.status === 204) {
+        const rawText = await res.text().catch(() => '');
+        log(`Reading [${item.item_id}] "${item.item_name}": HTTP ${res.status} | ${rawText.slice(0, 80)}`, res.ok ? 'success' : 'warn');
+
+        if (res.ok || res.status === 200 || res.status === 201 || res.status === 204 || rawText.toLowerCase().includes('already')) {
           completed++;
-          log(`Reading [${item.item_id}] Completed (HTTP ${res.status})`, 'success');
-        } else {
-          const errText = await res.text().catch(() => '');
-          if (errText.toLowerCase().includes('already')) {
-            completed++;
-            log(`Reading [${item.item_id}] Already Completed`, 'info');
-          }
         }
       } catch (err) {
         log(`Reading [${item.item_id}] Error: ${err.message}`, 'warn');
       }
+      await wait(300);
     }
 
     // Trigger on-page button if active reading open
-    const markCompleteBtn = document.querySelector('button[data-testid="mark-complete"], button[aria-label="Mark as completed"]');
+    const markCompleteBtn = document.querySelector('button[data-testid="mark-complete"], button[aria-label="Mark as completed"], button[data-testid="mark-as-completed-button"]');
     if (markCompleteBtn) {
       try { markCompleteBtn.click(); } catch (_) {}
     }
@@ -786,7 +804,7 @@
 
     showToast('Completing dialogue session...', 'info', true);
 
-    // Safe button search across all buttons in DOM
+    // Click on-page End Session / Complete buttons
     const allButtons = Array.from(document.querySelectorAll('button'));
     const endBtns = allButtons.filter((btn) => {
       const text = (btn.textContent || '').trim().toLowerCase();
@@ -816,7 +834,7 @@
         const cId = item.course_id || courseId;
         const itemId = item.item_id;
 
-        // 1. Create and end GraphQL chat session
+        // 1. Create GraphQL chat session
         const createRes = await fetch('https://www.coursera.org/graphql-gateway?opname=AiCoachPlatform_CreateChatSession', {
           method: 'POST',
           headers: headers,
@@ -831,53 +849,68 @@
             },
             query: 'mutation AiCoachPlatform_CreateChatSession($input: AiCoach_CreateChatSessionInput!) { AiCoach_CreateChatSession(input: $input) { id title __typename } }'
           }])
-        });
+        }).catch(() => {});
 
         let sessionId = null;
-        if (createRes.ok) {
-          const cJson = await createRes.json();
+        if (createRes && createRes.ok) {
+          const cJson = await createRes.json().catch(() => ({}));
           sessionId = cJson?.[0]?.data?.AiCoach_CreateChatSession?.id || cJson?.data?.AiCoach_CreateChatSession?.id;
         }
 
-        // End chat session
-        await fetch('https://www.coursera.org/graphql-gateway?opname=CoachItem_EndSession', {
-          method: 'POST',
-          headers: headers,
-          credentials: 'include',
-          body: JSON.stringify([{
-            operationName: 'CoachItem_EndSession',
-            variables: {
-              input: {
-                chatSessionId: sessionId || `session-${cId}-${itemId}`,
-                message: 'Generate final session summary',
-                coachModeId: 'COACH_ITEM_DIALOGUE',
-                terminalActionId: 'STUCK_END',
-                courseraContext: {
-                  courseId: cId,
-                  itemId: itemId,
-                  courseBranchId: cId
-                },
-                additionalContext: []
-              }
-            },
-            query: 'mutation CoachItem_EndSession($input: CoachItem_EndSessionInput!) { CoachItem_EndSession(input: $input) { chatSessionId itemCompletionHandled __typename } }'
-          }])
-        }).catch(() => {});
+        // 2. End chat session
+        if (sessionId) {
+          const endRes = await fetch('https://www.coursera.org/graphql-gateway?opname=CoachItem_EndSession', {
+            method: 'POST',
+            headers: headers,
+            credentials: 'include',
+            body: JSON.stringify([{
+              operationName: 'CoachItem_EndSession',
+              variables: {
+                input: {
+                  chatSessionId: sessionId,
+                  message: 'Generate final session summary',
+                  coachModeId: 'COACH_ITEM_DIALOGUE',
+                  terminalActionId: 'STUCK_END',
+                  courseraContext: {
+                    courseId: cId,
+                    itemId: itemId,
+                    courseBranchId: cId
+                  },
+                  additionalContext: []
+                }
+              },
+              query: 'mutation CoachItem_EndSession($input: CoachItem_EndSessionInput!) { CoachItem_EndSession(input: $input) { chatSessionId itemCompletionHandled __typename } }'
+            }])
+          }).catch(() => {});
+          if (endRes) log(`Dialogue [${itemId}] CoachItem_EndSession: HTTP ${endRes.status}`, endRes.ok ? 'info' : 'warn');
+        }
 
-        // 2. Mark widget progress
-        const key = `${currentUserId || '161276145'}~${cId}~${itemId}`;
-        await fetch(`https://www.coursera.org/api/onDemandWidgetProgress.v1/${key}`, {
-          method: 'PUT',
-          headers: headers,
-          credentials: 'include',
-          body: JSON.stringify({
-            sessionId: sessionId || 'completed-session',
-            progressState: 'Completed'
-          })
-        }).catch(() => {});
+        // 3. Mark widget progress if widget session exists
+        const widgetKey = `${currentUserId || '161276145'}~${cId}~${itemId}`;
+        try {
+          const wRes = await fetch(`https://www.coursera.org/api/onDemandWidgetSessions.v1/${widgetKey}?fields=session,sessionId`, {
+            credentials: 'include'
+          });
+          if (wRes.ok) {
+            const wData = await wRes.json();
+            const wSessionId = wData?.elements?.[0]?.sessionId;
+            if (wSessionId) {
+              await fetch(`https://www.coursera.org/api/onDemandWidgetProgress.v1/${widgetKey}`, {
+                method: 'PUT',
+                headers: headers,
+                credentials: 'include',
+                body: JSON.stringify({
+                  sessionId: wSessionId,
+                  progressState: 'Completed'
+                })
+              });
+              log(`Dialogue [${itemId}] WidgetProgress PUT: Completed`, 'info');
+            }
+          }
+        } catch (_) {}
 
-        // 3. Mark supplement completion as fallback
-        await fetch('https://www.coursera.org/api/onDemandSupplementCompletions.v1', {
+        // 4. Mark supplement completion as fallback
+        const supRes = await fetch('https://www.coursera.org/api/onDemandSupplementCompletions.v1', {
           method: 'POST',
           headers: headers,
           credentials: 'include',
@@ -887,12 +920,14 @@
             itemId: itemId
           })
         }).catch(() => {});
+        if (supRes) log(`Dialogue [${itemId}] Supplement Fallback: HTTP ${supRes.status}`, supRes.ok ? 'info' : 'warn');
 
         completed++;
-        log(`Dialogue [${itemId}] completed successfully.`, 'success');
+        log(`Dialogue [${itemId}] marked complete.`, 'success');
       } catch (err) {
         log(`Dialogue error on ${item.item_id}: ${err.message}`, 'warn');
       }
+      await wait(400);
     }
 
     showToast('🎉 Dialogue session completed! Reloading...', 'success', true);
@@ -980,23 +1015,41 @@
   }
 
   // 6. Complete Practice Widgets / Ungraded Plugins
+  // 6. Complete Practice Widget / Ungraded Plugin
   async function completeUngradedPlugin() {
+    log('Connecting to course data for Practice Widgets...', 'info');
     showToast('Submitting practice widgets...', 'info');
     await ensureCourseContext();
 
     const headers = await getCourseraHeaders();
     const courseId = currentCourseId || 'SG_K6nEmEeWxvQr3acyajw';
-    const widgets = getContextItems('ungradedWidget');
+    let widgets = getContextItems('ungradedWidget');
+
+    // Also check direct item in URL
+    const urlMatch = window.location.pathname.match(/\/(item|ungradedWidget|coach|supplement)\/([a-zA-Z0-9_-]+)/);
+    if (urlMatch) {
+      const activeId = urlMatch[2];
+      if (!widgets.some((w) => w.item_id === activeId)) {
+        widgets.unshift({
+          item_id: activeId,
+          item_name: document.title || 'Current Widget',
+          course_id: currentCourseId,
+          open_course_slug: currentCourseSlug
+        });
+      }
+    }
 
     // Click on-page submit buttons
-    const checkBtns = document.querySelectorAll('button[data-testid="widget-submit"], button[aria-label="Submit"], button[data-testid="mark-complete"], button[aria-label="Check"]');
+    const checkBtns = document.querySelectorAll('button[data-testid="widget-submit"], button[aria-label="Submit"], button[data-testid="mark-complete"], button[aria-label="Check"], button[aria-label="Submit assignment"]');
     checkBtns.forEach((btn) => {
       try { btn.click(); } catch (_) {}
     });
 
+    let completed = 0;
     for (const item of widgets) {
       try {
-        const key = `${currentUserId}~${courseId}~${item.item_id}`;
+        const cId = item.course_id || courseId;
+        const key = `${currentUserId || '161276145'}~${cId}~${item.item_id}`;
         const res = await fetch(`https://www.coursera.org/api/onDemandWidgetSessions.v1/${key}?fields=session,sessionId`, {
           headers: headers,
           credentials: 'include'
@@ -1005,19 +1058,35 @@
           const json = await res.json();
           const sessId = json?.elements?.[0]?.sessionId;
           if (sessId) {
-            await fetch(`https://www.coursera.org/api/onDemandWidgetProgress.v1/${key}`, {
+            const putRes = await fetch(`https://www.coursera.org/api/onDemandWidgetProgress.v1/${key}`, {
               method: 'PUT',
               headers: headers,
               credentials: 'include',
               body: JSON.stringify({ sessionId: sessId, progressState: 'Completed' })
             });
-            log(`Practice widget [${item.item_id}] Completed`, 'success');
+            log(`Practice widget [${item.item_id}] Progress PUT: HTTP ${putRes.status}`, putRes.ok ? 'success' : 'warn');
+            completed++;
           }
         }
-      } catch (_) {}
+
+        // Also try supplement fallback
+        await fetch('https://www.coursera.org/api/onDemandSupplementCompletions.v1', {
+          method: 'POST',
+          headers: headers,
+          credentials: 'include',
+          body: JSON.stringify({
+            userId: Number(currentUserId || '161276145'),
+            courseId: cId,
+            itemId: item.item_id
+          })
+        }).catch(() => {});
+      } catch (err) {
+        log(`Widget [${item.item_id}] Error: ${err.message}`, 'warn');
+      }
+      await wait(300);
     }
 
-    showToast('🎉 Practice widgets marked complete! Reloading...', 'success', true);
+    showToast(`🎉 Practice widgets processed (${completed})! Reloading...`, 'success', true);
     setTimeout(() => {
       window.location.reload();
     }, 1800);
