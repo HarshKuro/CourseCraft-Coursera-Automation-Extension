@@ -1,6 +1,7 @@
 /**
  * CourseCraft - Popup Controller
- * Handles user interactions, theme management, and commands to content script.
+ * Manages UI events, live diagnostics log streaming,
+ * and user ID configuration.
  */
 
 'use strict';
@@ -8,6 +9,8 @@
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   initStatus();
+  initUserIdEditor();
+  initLogsDrawer();
   initActionHandlers();
   initSettingsRoute();
 });
@@ -41,24 +44,119 @@ function applyTheme(theme) {
   }
 }
 
-// Check if currently on Coursera tab
+// User ID Editor
+function initUserIdEditor() {
+  const editBtn = document.getElementById('editUserIdBtn');
+  const editBox = document.getElementById('editUserIdBox');
+  const input = document.getElementById('manualUserIdInput');
+  const saveBtn = document.getElementById('saveManualUserIdBtn');
+  const display = document.getElementById('userIdDisplay');
+
+  // Load current saved ID
+  chrome.storage.local.get(['customUserId', 'cachedUserId'], (data) => {
+    const activeId = data.customUserId || data.cachedUserId || '161276145';
+    if (display) display.textContent = activeId;
+    if (input) input.value = activeId;
+  });
+
+  editBtn?.addEventListener('click', () => {
+    editBox?.classList.toggle('hidden');
+    if (!editBox?.classList.contains('hidden')) {
+      input?.focus();
+      input?.select();
+    }
+  });
+
+  saveBtn?.addEventListener('click', () => {
+    const newId = input?.value?.trim();
+    if (!newId || isNaN(Number(newId))) {
+      showToast('Please enter a valid numeric User ID', true);
+      return;
+    }
+
+    chrome.storage.local.set({ customUserId: newId, cachedUserId: newId }, () => {
+      if (display) display.textContent = newId;
+      editBox?.classList.add('hidden');
+      showToast(`User ID saved: ${newId}`);
+
+      // Forward to active tab
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]?.id) {
+          chrome.tabs.sendMessage(tabs[0].id, { action: 'SET_USER_ID', userId: newId }).catch(() => {});
+        }
+      });
+    });
+  });
+}
+
+// Live Logs Drawer
+function initLogsDrawer() {
+  const toggleBtn = document.getElementById('toggleLogsBtn');
+  const container = document.getElementById('logsContainer');
+  const arrow = document.getElementById('logsToggleArrow');
+  const consoleEl = document.getElementById('logsConsole');
+  const copyBtn = document.getElementById('copyLogsBtn');
+  const clearBtn = document.getElementById('clearLogsBtn');
+
+  toggleBtn?.addEventListener('click', (e) => {
+    if (e.target === copyBtn || e.target === clearBtn) return;
+    container?.classList.toggle('hidden');
+    if (arrow) arrow.textContent = container?.classList.contains('hidden') ? '▼' : '▲';
+    renderLogs();
+  });
+
+  copyBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    chrome.storage.local.get('liveLogs', (data) => {
+      const logs = data.liveLogs || [];
+      const text = logs.map(l => `[${l.time}] [${l.type.toUpperCase()}] ${l.msg}`).join('\n');
+      navigator.clipboard.writeText(text).then(() => {
+        showToast('Logs copied to clipboard!');
+      });
+    });
+  });
+
+  clearBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    chrome.storage.local.set({ liveLogs: [] }, () => {
+      if (consoleEl) consoleEl.innerHTML = '<div class="log-line log-info">Logs cleared.</div>';
+    });
+  });
+
+  function renderLogs() {
+    chrome.storage.local.get('liveLogs', (data) => {
+      const logs = data.liveLogs || [];
+      if (!consoleEl) return;
+      if (logs.length === 0) {
+        consoleEl.innerHTML = '<div class="log-line log-info">No logs recorded yet.</div>';
+        return;
+      }
+      consoleEl.innerHTML = logs.map(l => {
+        return `<div class="log-line log-${l.type}">[${l.time}] ${l.msg}</div>`;
+      }).join('');
+      consoleEl.scrollTop = consoleEl.scrollHeight;
+    });
+  }
+
+  // Poll logs periodically while popup is open
+  setInterval(renderLogs, 1000);
+}
+
+// Check Tab & Coursera Status
 function initStatus() {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const activeTab = tabs[0];
-    const contextCard = document.getElementById('contextCard');
     const titleEl = document.getElementById('courseStatusTitle');
     const subtitleEl = document.getElementById('courseStatusSubtitle');
+    const userDisplay = document.getElementById('userIdDisplay');
+    const userNameDisplay = document.getElementById('userNameDisplay');
 
     if (!activeTab || !activeTab.url || !activeTab.url.includes('coursera.org')) {
-      if (contextCard) contextCard.className = 'context-card status-waiting';
       if (titleEl) titleEl.textContent = 'Not on Coursera';
       if (subtitleEl) subtitleEl.textContent = 'Navigate to Coursera to use actions';
       return;
     }
 
-    // Tab is on Coursera
-    if (contextCard) contextCard.className = 'context-card status-active';
-    
     // Extract course slug from URL
     const slugMatch = activeTab.url.match(/\/learn\/([^\/]+)/);
     const courseSlug = slugMatch ? slugMatch[1].replace(/-/g, ' ').toUpperCase() : 'Coursera Workspace';
@@ -70,7 +168,7 @@ function initStatus() {
     chrome.tabs.sendMessage(activeTab.id, { action: 'GET_COURSE_INFO' }, (res) => {
       if (chrome.runtime.lastError) {
         if (subtitleEl) {
-          subtitleEl.innerHTML = 'Script offline — <span id="reloadTabLink" style="color:var(--primary);cursor:pointer;text-decoration:underline;">Click to refresh tab</span>';
+          subtitleEl.innerHTML = 'Script standby – <span id="reloadTabLink" style="color:var(--primary);cursor:pointer;text-decoration:underline;">Click to refresh tab</span>';
           document.getElementById('reloadTabLink')?.addEventListener('click', () => {
             chrome.tabs.reload(activeTab.id);
             window.close();
@@ -78,9 +176,12 @@ function initStatus() {
         }
         return;
       }
-      if (res && res.courseName) {
-        if (titleEl) titleEl.textContent = res.courseName;
+
+      if (res) {
+        if (res.courseName && titleEl) titleEl.textContent = res.courseName;
         if (subtitleEl) subtitleEl.textContent = res.itemCount ? `${res.itemCount} course items ready` : 'Ready for automation';
+        if (res.userId && userDisplay) userDisplay.textContent = res.userId;
+        if (res.userName && userNameDisplay) userNameDisplay.textContent = res.userName;
       }
     });
   });
@@ -117,8 +218,10 @@ function initActionHandlers() {
               window.close();
             }, 800);
           } else {
-            showToast(`${title} started! Check Coursera for progress.`);
-            setTimeout(() => window.close(), 1200);
+            showToast(`${title} started! Check logs below.`);
+            // Auto open logs drawer on trigger
+            const container = document.getElementById('logsContainer');
+            container?.classList.remove('hidden');
           }
         });
       });

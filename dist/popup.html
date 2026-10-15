@@ -37,16 +37,48 @@
       </div>
     </header>
 
-    <!-- Context Status Banner -->
-    <div id="contextCard" class="context-card status-waiting">
-      <div class="status-indicator"></div>
-      <div class="context-details">
-        <span id="courseStatusTitle" class="context-title">Detecting Coursera...</span>
-        <span id="courseStatusSubtitle" class="context-subtitle">Open any Coursera course page to begin</span>
+    <!-- User Account & Course Info Card -->
+    <div id="accountCard" class="account-card">
+      <div class="user-row">
+        <div class="user-avatar">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
+          </svg>
+        </div>
+        <div class="user-meta">
+          <div class="user-name-line">
+            <span id="userNameDisplay" class="user-name">Coursera Learner</span>
+            <span id="sessionBadge" class="session-badge badge-active">Active</span>
+          </div>
+          <div class="user-id-line">
+            <span class="id-label">User ID:</span>
+            <span id="userIdDisplay" class="user-id-value">161276145</span>
+            <button id="editUserIdBtn" class="edit-id-btn" title="Edit / Change User ID" aria-label="Edit User ID">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Edit User ID box -->
+      <div id="editUserIdBox" class="edit-id-box hidden">
+        <input type="text" id="manualUserIdInput" placeholder="User ID (e.g. 161276145)" />
+        <button id="saveManualUserIdBtn" class="btn-sm">Save</button>
+      </div>
+
+      <div class="course-row">
+        <div class="status-indicator"></div>
+        <div class="course-meta">
+          <span id="courseStatusTitle" class="course-name">Detecting Coursera...</span>
+          <span id="courseStatusSubtitle" class="course-subtitle">Open any course to start</span>
+        </div>
       </div>
     </div>
 
-    <!-- Main Navigation / Grid of Features -->
+    <!-- Main Actions Grid -->
     <main class="actions-section">
       <div class="section-label">Automate Tasks</div>
       <div class="action-grid" id="actionGrid">
@@ -59,13 +91,13 @@
           </div>
           <div class="card-content">
             <span class="card-title">Watch Lecture</span>
-            <span class="card-desc">Auto-complete active video</span>
+            <span class="card-desc">Complete lectures in section</span>
           </div>
         </button>
 
         <!-- Skip Video+ -->
         <button class="action-card highlight-card" data-action="skipvideoplus">
-          <div class="card-icon card-indigo">
+          <div class="card-icon card-purple">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
               <polygon points="5 4 15 12 5 20 5 4" />
               <line x1="19" y1="5" x2="19" y2="19" />
@@ -73,7 +105,7 @@
           </div>
           <div class="card-content">
             <span class="card-title">Skip Video+</span>
-            <span class="card-desc">Bulk-complete all lectures</span>
+            <span class="card-desc">Bulk finish all course videos</span>
           </div>
         </button>
 
@@ -87,7 +119,7 @@
           </div>
           <div class="card-content">
             <span class="card-title">Read Material</span>
-            <span class="card-desc">Mark readings as done</span>
+            <span class="card-desc">Mark reading items complete</span>
           </div>
         </button>
 
@@ -100,61 +132,59 @@
           </div>
           <div class="card-content">
             <span class="card-title">Discussion</span>
-            <span class="card-desc">Answer prompts</span>
+            <span class="card-desc">Auto-post peer response</span>
           </div>
         </button>
 
-        <!-- Dialogue -->
+        <!-- Dialogue / AI Coach -->
         <button class="action-card" data-action="dialogue">
-          <div class="card-icon card-purple">
+          <div class="card-icon card-teal">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="11" width="18" height="10" rx="2" />
-              <circle cx="12" cy="5" r="2" />
-              <path d="M12 7v4" />
-              <line x1="8" y1="16" x2="8.01" y2="16" />
-              <line x1="16" y1="16" x2="16.01" y2="16" />
+              <path d="M12 2a10 10 0 0 1 10 10c0 5.52-4.48 10-10 10S2 17.52 2 12A10 10 0 0 1 12 2z" />
+              <path d="M8 12h8M12 8v8" />
             </svg>
           </div>
           <div class="card-content">
             <span class="card-title">AI Coach Dialogue</span>
-            <span class="card-desc">Complete interactive sessions</span>
+            <span class="card-desc">End & complete dialogue</span>
           </div>
         </button>
 
-        <!-- Ungraded Plugin -->
+        <!-- Practice Widget -->
         <button class="action-card" data-action="ungradedplugin">
-          <div class="card-icon card-teal">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
-              <line x1="7" y1="7" x2="7.01" y2="7" />
-            </svg>
-          </div>
-          <div class="card-content">
-            <span class="card-title">Practice Widgets</span>
-            <span class="card-desc">Submit ungraded exercises</span>
-          </div>
-        </button>
-
-        <!-- Quiz Assistant -->
-        <button class="action-card card-span-2" data-action="quiz">
-          <div class="card-icon card-cyan">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-              <line x1="16" y1="13" x2="8" y2="13" />
-              <line x1="16" y1="17" x2="8" y2="17" />
-              <polyline points="10 9 9 9 8 9" />
-            </svg>
-          </div>
-          <div class="card-content">
-            <span class="card-title">Quiz Assistant</span>
-            <span class="card-desc">Smart question solver with local history & free AI support</span>
-          </div>
-        </button>
-
-        <!-- Course Backup -->
-        <button class="action-card" data-action="coursebackup">
           <div class="card-icon card-rose">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="9 11 12 14 22 4" />
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+            </svg>
+          </div>
+          <div class="card-content">
+            <span class="card-title">Practice Widget</span>
+            <span class="card-desc">Solve ungraded exercises</span>
+          </div>
+        </button>
+
+        <!-- Quiz Assistant (Full Span) -->
+        <button class="action-card card-span-2" data-action="quiz">
+          <div class="card-icon card-indigo">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          </div>
+          <div class="card-content">
+            <div class="card-title-row">
+              <span class="card-title">AI Quiz Assistant</span>
+              <span class="shortcut-tag">Alt + Z</span>
+            </div>
+            <span class="card-desc">Solve graded quizzes, auto-fill Honor Code & name</span>
+          </div>
+        </button>
+
+        <!-- Backup -->
+        <button class="action-card" data-action="coursebackup">
+          <div class="card-icon card-sky">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="7 10 12 15 17 10" />
@@ -163,13 +193,13 @@
           </div>
           <div class="card-content">
             <span class="card-title">Course Backup</span>
-            <span class="card-desc">Export videos & slides</span>
+            <span class="card-desc">Export outline & resources</span>
           </div>
         </button>
 
         <!-- Shareable Link -->
         <button class="action-card" data-action="shareablelink">
-          <div class="card-icon card-slate">
+          <div class="card-icon card-violet">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
               <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
@@ -177,28 +207,39 @@
           </div>
           <div class="card-content">
             <span class="card-title">Shareable Link</span>
-            <span class="card-desc">Copy submission URL</span>
+            <span class="card-desc">Copy peer assignment link</span>
           </div>
         </button>
       </div>
     </main>
 
-    <!-- Real-time Status Alert / Toast in Popup -->
-    <div id="statusToast" class="popup-toast hidden">
-      <span id="toastMessage">Ready</span>
+    <!-- Live Execution Logs Console -->
+    <div class="logs-section">
+      <div class="logs-header" id="toggleLogsBtn">
+        <div class="logs-title">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="4 17 10 11 4 5"/>
+            <line x1="12" y1="19" x2="20" y2="19"/>
+          </svg>
+          <span>Live Execution Logs</span>
+        </div>
+        <div class="logs-actions">
+          <button id="copyLogsBtn" class="btn-xs" title="Copy Logs to Clipboard">Copy</button>
+          <button id="clearLogsBtn" class="btn-xs" title="Clear Logs">Clear</button>
+          <span id="logsToggleArrow" class="arrow-down">▼</span>
+        </div>
+      </div>
+      <div id="logsContainer" class="logs-container hidden">
+        <div id="logsConsole" class="logs-console">
+          <div class="log-line log-info">System initialized. Click any action to start.</div>
+        </div>
+      </div>
     </div>
 
-    <!-- Footer -->
-    <footer class="app-footer">
-      <div class="footer-left">
-        <span class="version-tag">v4.0.0</span>
-        <span class="badge-dot"></span>
-        <span class="footer-note">Press <kbd>Alt+W</kbd> to toggle</span>
-      </div>
-      <div class="footer-right">
-        <span class="powered-by">CourseCraft</span>
-      </div>
-    </footer>
+    <!-- Footer Toast -->
+    <div id="statusToast" class="status-toast hidden">
+      <span id="toastMessage"></span>
+    </div>
   </div>
 
   <script src="scripts/popup.js"></script>
