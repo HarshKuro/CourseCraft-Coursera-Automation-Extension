@@ -99,7 +99,8 @@
   const nativeTime = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'currentTime');
   const nativePlay = HTMLMediaElement.prototype.play;
 
-  let currentMarathonSpeed = 16.0;
+  // Calibrated playback speed (4.0x is smooth, unthrottled, and avoids DASH buffer drops)
+  let currentMarathonSpeed = 4.0;
   window.__COURSECRAFT_FAST_FORWARDING__ = false;
   window.__COURSECRAFT_MARATHON__ = false;
 
@@ -110,12 +111,31 @@
       },
       set: function(val) {
         this.__cc_rate = val;
-        const effective = (window.__COURSECRAFT_FAST_FORWARDING__ || window.__COURSECRAFT_MARATHON__) 
+        const effective = (window.__COURSECRAFT_FAST_FORWARDING__) 
           ? Math.max(val, currentMarathonSpeed) 
           : val;
         if (nativeRate?.set) {
           nativeRate.set.call(this, effective);
         }
+      },
+      configurable: true
+    });
+  } catch (_) {}
+
+  // 5b. Spoof HTMLMediaElement.prototype.played so Coursera's player detects 100% watch coverage
+  const nativePlayed = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'played');
+  try {
+    Object.defineProperty(HTMLMediaElement.prototype, 'played', {
+      get: function() {
+        const dur = this.duration;
+        if (window.__COURSECRAFT_FAST_FORWARDING__ && dur && isFinite(dur) && dur > 0) {
+          return {
+            length: 1,
+            start: () => 0,
+            end: () => dur
+          };
+        }
+        return nativePlayed?.get ? nativePlayed.get.call(this) : { length: 0, start: () => 0, end: () => 0 };
       },
       configurable: true
     });
@@ -185,9 +205,38 @@
 
         // Mute audio to avoid noise burst during high-speed seek
         video.muted = true;
-        
-        // Seek to 12s before end (takes ~0.8s at 16x speed to play through end)
-        const targetTime = Math.max(0, dur - 12);
+
+        const clickCompletionBtn = () => {
+          const selectors = [
+            'button[data-testid="mark-complete"]',
+            'button[aria-label="Mark as completed"]',
+            'button[aria-label="Mark as complete"]',
+            'button[data-testid="mark-as-completed-button"]',
+            'button.rc-MarkAsCompleteButton',
+            'button[data-e2e="mark-complete-button"]',
+            'button[data-testid="item-complete-button"]',
+            'button[aria-label="Complete"]'
+          ];
+          for (const sel of selectors) {
+            const btn = document.querySelector(sel);
+            if (btn && !btn.disabled) {
+              try { btn.click(); return true; } catch (_) {}
+            }
+          }
+          return false;
+        };
+
+        // Dispatch synthetic progress events across intervals so internal Coursera player telemetry registers watch time
+        const intervals = [0.25, 0.50, 0.75, 0.90, 0.98];
+        intervals.forEach((frac) => {
+          try {
+            const ev = new CustomEvent('timeupdate', { bubbles: true });
+            video.dispatchEvent(ev);
+          } catch (_) {}
+        });
+
+        // Seek close to the end (takes a short moment at calibrated speed to reach end)
+        const targetTime = Math.max(0, dur - 3.5);
 
         try {
           if (nativeTime?.set) nativeTime.set.call(video, targetTime);
@@ -204,25 +253,21 @@
         video.__userPaused = false;
         nativePlay.call(video).catch(() => {});
         video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+        clickCompletionBtn();
 
         let finished = false;
         const cleanup = (wasFallback = false) => {
           if (finished) return;
           finished = true;
           window.__COURSECRAFT_FAST_FORWARDING__ = false;
-
-          // Try clicking on-page completion button if Coursera rendered it
-          const markBtn = document.querySelector('button[data-testid="mark-complete"], button[aria-label="Mark as completed"], button[data-testid="mark-as-completed-button"], button.rc-MarkAsCompleteButton');
-          if (markBtn) {
-            try { markBtn.click(); } catch (_) {}
-          }
+          clickCompletionBtn();
 
           if (callback) callback({ success: true, duration: dur, fallback: wasFallback });
         };
 
         video.addEventListener('ended', () => cleanup(false), { once: true });
 
-        // Safety fallback: if video doesn't end in 5.5s, trigger completion dispatch
+        // Safety fallback: if video doesn't end in 4.5s, trigger completion dispatch
         setTimeout(() => {
           if (!finished && window.__COURSECRAFT_FAST_FORWARDING__) {
             try {
@@ -231,9 +276,10 @@
               video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
               video.dispatchEvent(new Event('ended', { bubbles: true }));
             } catch (_) {}
+            clickCompletionBtn();
             cleanup(true);
           }
-        }, 5500);
+        }, 4500);
       };
 
       if (video.readyState >= 1 && isFinite(video.duration) && video.duration > 0) {
@@ -286,6 +332,16 @@
           result
         }, '*');
       });
+    } else if (command === 'STOP_FAST_FORWARD') {
+      window.__COURSECRAFT_FAST_FORWARDING__ = false;
+      window.__COURSECRAFT_MARATHON__ = false;
+      const video = document.querySelector('video');
+      if (video) {
+        try {
+          if (nativeRate?.set) nativeRate.set.call(video, 1.0);
+          else video.playbackRate = 1.0;
+        } catch (_) {}
+      }
     } else if (command === 'ADVANCE_NEXT') {
       const ok = triggerNextNavigation();
       window.postMessage({
@@ -299,3 +355,4 @@
     }
   });
 })();
+

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "CourseCraft - Learning & Automation Assistant",
-  "version": "4.6.1",
-  "version_name": "4.6.1 (CourseCraft Marathon)",
+  "version": "4.6.2",
+  "version_name": "4.6.2 (Video Completion & Marathon Fix)",
   "author": "CourseCraft Open Source",
   "description": "Automate routine course tasks, backup course materials, bulk-complete lectures, and assist study workflows on Coursera.",
   "permissions": [
@@ -26,7 +26,10 @@
   "action": {
     "default_popup": "dist/popup.html"
   },
-  "options_page": "dist/settings.html",
+  "options_ui": {
+    "page": "dist/settings.html",
+    "open_in_tab": true
+  },
   "content_scripts": [
     {
       "run_at": "document_start",

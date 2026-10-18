@@ -99,3 +99,22 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     }).catch(() => {});
   }
 });
+
+// Auto-cleanup stale marathon state when Coursera tabs are closed
+chrome.tabs.onRemoved.addListener(() => {
+  chrome.tabs.query({ url: '*://*.coursera.org/*' }, (tabs) => {
+    if (!tabs || tabs.length === 0) {
+      chrome.storage.local.set({ marathonActive: false, marathonHeartbeat: 0, marathonCount: 0, marathonTotal: 0 });
+    }
+  });
+});
+
+// Reset marathon flags on startup and install
+chrome.runtime.onStartup.addListener(() => {
+  chrome.storage.local.set({ marathonActive: false, marathonHeartbeat: 0, marathonCount: 0, marathonTotal: 0 });
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.storage.local.set({ marathonActive: false, marathonHeartbeat: 0, marathonCount: 0, marathonTotal: 0 });
+});
+

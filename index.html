@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <!-- Primary Meta Tags -->
+  <title>CourseCraft | Open-Source Coursera Automation Extension & 16x Video Marathon</title>
+  <meta name="title" content="CourseCraft | Open-Source Coursera Automation Extension & 16x Video Marathon" />
+  <meta name="description" content="Supercharge your Coursera learning. CourseCraft is a free, open-source Manifest V3 Chrome extension featuring 16x video marathon playback, auto-readings, AI Coach dialogue solver, and Gemini exam copilot." />
+  <meta name="keywords" content="coursera automation extension, coursera video speed controller, coursera marathon mode, coursera auto complete, coursera chrome extension, coursera study tools, coursecraft, coursera skip video, manifest v3 extension" />
+  <meta name="author" content="Harsh Kuro" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://harshkuro.github.io/CourseCraft-Coursera-Automation-Extension/" />
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <meta name="google-site-verification" content="YCCTDv3K78QvvLxQExt6gxzDTcdf85B0wqIhGaWBElg" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://harshkuro.github.io/CourseCraft-Coursera-Automation-Extension/" />
+  <meta property="og:title" content="CourseCraft | Open-Source Coursera Automation & Video Marathon" />
+  <meta property="og:description" content="16x Video Marathon runner, automated reading completions, AI Coach chat solver, and Gemini AI exam assistance. 100% Free & Open-Source." />
+  <meta property="og:image" content="https://harshkuro.github.io/CourseCraft-Coursera-Automation-Extension/favicon.png" />
+
+  <!-- Twitter Card -->
+  <meta property="twitter:card" content="summary_large_image" />
+  <meta property="twitter:url" content="https://harshkuro.github.io/CourseCraft-Coursera-Automation-Extension/" />
+  <meta property="twitter:title" content="CourseCraft | Coursera Automation & Video Marathon" />
+  <meta property="twitter:description" content="16x Video Marathon runner, automated reading completions, AI Coach chat solver, and Gemini AI exam assistance." />
+  <meta property="twitter:image" content="https://harshkuro.github.io/CourseCraft-Coursera-Automation-Extension/favicon.png" />
+
+  <!-- Google Fonts: Inter & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- Structured Data (JSON-LD) for Google Rich Snippets -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "CourseCraft",
+    "operatingSystem": "Chrome, Edge, Brave, Opera",
+    "applicationCategory": "EducationalApplication",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "description": "Modern open-source browser extension that automates Coursera study routines with a 16x video marathon runner, auto-readings, AI coach solver, and Gemini exam copilot.",
+    "url": "https://harshkuro.github.io/CourseCraft-Coursera-Automation-Extension/",
+    "downloadUrl": "https://github.com/HarshKuro/CourseCraft-Coursera-Automation-Extension/releases/latest",
+    "softwareVersion": "4.6.1",
+    "author": {
+      "@type": "Person",
+      "name": "Harsh Kuro",
+      "url": "https://github.com/HarshKuro"
+    }
+  }
+  </script>
+
+  <style>
+    :root {
+      --bg: #080c14;
+      --card-bg: rgba(17, 24, 39, 0.7);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --card-hover-border: rgba(168, 85, 247, 0.5);
+      --primary: #8b5cf6;
+      --primary-glow: rgba(139, 92, 246, 0.35);
+      --accent-cyan: #06b6d4;
+      --accent-amber: #f59e0b;
+      --accent-emerald: #10b981;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow-x: hidden;
+      line-height: 1.6;
+    }
+
+    /* Ambient Glow Background Spheres */
+    .glow-sphere-1 {
+      position: absolute;
+      top: -120px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 750px;
+      height: 450px;
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.22) 0%, rgba(6, 182, 212, 0.08) 50%, transparent 70%);
+      filter: blur(80px);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .glow-sphere-2 {
+      position: absolute;
+      top: 850px;
+      right: -100px;
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, rgba(245, 158, 11, 0.12) 0%, transparent 70%);
+      filter: blur(90px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Navigation Bar */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      backdrop-filter: blur(16px);
+      background: rgba(8, 12, 20, 0.75);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .nav-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: #fff;
+    }
+    .brand-logo {
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      background: linear-gradient(135deg, #8b5cf6, #06b6d4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 18px;
+      box-shadow: 0 4px 14px rgba(139, 92, 246, 0.4);
+    }
+    .brand-name {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 700;
+      font-size: 21px;
+      letter-spacing: -0.5px;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+    }
+    .nav-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+    .nav-link:hover {
+      color: #fff;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #8b5cf6, #6366f1);
+      color: #fff;
+      box-shadow: 0 4px 20px rgba(139, 92, 246, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 28px rgba(139, 92, 246, 0.5);
+    }
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.25);
+      transform: translateY(-2px);
+    }
+
+    /* Hero Section */
+    .hero {
+      position: relative;
+      z-index: 1;
+      max-width: 1000px;
+      margin: 80px auto 60px;
+      padding: 0 24px;
+      text-align: center;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(139, 92, 246, 0.12);
+      border: 1px solid rgba(139, 92, 246, 0.35);
+      padding: 6px 16px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #c4b5fd;
+      margin-bottom: 24px;
+      box-shadow: 0 0 20px rgba(139, 92, 246, 0.15);
+    }
+    .hero-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: clamp(40px, 6vw, 64px);
+      font-weight: 800;
+      line-height: 1.12;
+      letter-spacing: -1.5px;
+      margin-bottom: 22px;
+    }
+    .hero-gradient {
+      background: linear-gradient(135deg, #ffffff 30%, #a78bfa 70%, #38bdf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero-desc {
+      font-size: clamp(16px, 2.2vw, 20px);
+      color: var(--text-muted);
+      max-width: 720px;
+      margin: 0 auto 36px;
+      font-weight: 400;
+    }
+    .hero-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    /* Live Preview Mockup Card */
+    .preview-wrapper {
+      max-width: 900px;
+      margin: 50px auto 100px;
+      padding: 0 24px;
+      position: relative;
+      z-index: 1;
+    }
+    .preview-card {
+      background: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      padding: 32px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(139, 92, 246, 0.12);
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 32px;
+      align-items: center;
+    }
+    @media (max-width: 768px) {
+      .preview-card { grid-template-columns: 1fr; }
+    }
+    .preview-content h3 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 24px;
+      margin-bottom: 12px;
+    }
+    .preview-content p {
+      color: var(--text-muted);
+      font-size: 15px;
+      margin-bottom: 20px;
+    }
+    .preview-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      margin-bottom: 14px;
+    }
+    .mock-popup {
+      background: #0f172a;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    }
+    .mock-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      margin-bottom: 10px;
+    }
+    .mock-title {
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .mock-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      background: #8b5cf6;
+      color: #fff;
+    }
+
+    /* Features Grid */
+    .section-title {
+      text-align: center;
+      font-family: 'Outfit', sans-serif;
+      font-size: 34px;
+      margin-bottom: 14px;
+    }
+    .section-subtitle {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 16px;
+      max-width: 600px;
+      margin: 0 auto 50px;
+    }
+    .features-grid {
+      max-width: 1200px;
+      margin: 0 auto 100px;
+      padding: 0 24px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 24px;
+    }
+    .feature-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--card-border);
+      border-radius: 18px;
+      padding: 30px;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+    .feature-card:hover {
+      border-color: var(--card-hover-border);
+      transform: translateY(-4px);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4), 0 0 20px var(--primary-glow);
+    }
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      font-size: 24px;
+    }
+    .icon-purple { background: rgba(139, 92, 246, 0.15); color: #c084fc; border: 1px solid rgba(139, 92, 246, 0.3); }
+    .icon-emerald { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .icon-cyan { background: rgba(6, 182, 212, 0.15); color: #38bdf8; border: 1px solid rgba(6, 182, 212, 0.3); }
+    .icon-amber { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .icon-rose { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); }
+    .icon-indigo { background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); }
+
+    .feature-card h3 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 20px;
+      margin-bottom: 10px;
+    }
+    .feature-card p {
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    /* FAQ Section */
+    .faq-section {
+      max-width: 800px;
+      margin: 0 auto 100px;
+      padding: 0 24px;
+    }
+    .faq-item {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      margin-bottom: 14px;
+      overflow: hidden;
+    }
+    .faq-question {
+      padding: 18px 24px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      user-select: none;
+    }
+    .faq-answer {
+      padding: 0 24px 20px;
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1.6;
+      display: none;
+    }
+    .faq-item.active .faq-answer {
+      display: block;
+    }
+    .faq-item.active .faq-toggle {
+      transform: rotate(180deg);
+    }
+    .faq-toggle {
+      transition: transform 0.2s ease;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 40px 24px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+    footer a {
+      color: #c4b5fd;
+      text-decoration: none;
+    }
+    footer a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Background Glows -->
+  <div class="glow-sphere-1"></div>
+  <div class="glow-sphere-2"></div>
+
+  <!-- Header -->
+  <header>
+    <div class="nav-container">
+      <a href="#" class="brand">
+        <div class="brand-logo">⚡</div>
+        <span class="brand-name">CourseCraft</span>
+      </a>
+      <div class="nav-links">
+        <a href="#features" class="nav-link">Features</a>
+        <a href="#preview" class="nav-link">How It Works</a>
+        <a href="#faq" class="nav-link">FAQ</a>
+        <a href="https://github.com/HarshKuro/CourseCraft-Coursera-Automation-Extension" target="_blank" rel="noopener" class="btn btn-secondary">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          GitHub
+        </a>
+        <a href="https://github.com/HarshKuro/CourseCraft-Coursera-Automation-Extension/releases/latest" class="btn btn-primary">
+          Download ZIP
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-badge">
+      <span>⚡ CourseCraft v4.6.1 is Live</span>
+      <span style="opacity: 0.5">•</span>
+      <span>100% Free & Open Source</span>
+    </div>
+    <h1 class="hero-title">
+      Master Coursera on Your Terms.<br />
+      <span class="hero-gradient">Without the Friction.</span>
+    </h1>
+    <p class="hero-desc">
+      The ultimate Manifest V3 study assistant. Binge lectures with a 16x Video Marathon runner, instantly finish readings, solve AI Coach dialogues, and tackle exams with Gemini AI.
+    </p>
+    <div class="hero-buttons">
+      <a href="https://github.com/HarshKuro/CourseCraft-Coursera-Automation-Extension/releases/latest" class="btn btn-primary" style="padding: 13px 28px; font-size: 15px;">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download CourseCraft ZIP
+      </a>
+      <a href="https://github.com/HarshKuro/CourseCraft-Coursera-Automation-Extension" target="_blank" rel="noopener" class="btn btn-secondary" style="padding: 13px 26px; font-size: 15px;">
+        View on GitHub (Source Code)
+      </a>
+    </div>
+  </section>
+
+  <!-- Preview Mockup Card -->
+  <section class="preview-wrapper" id="preview">
+    <div class="preview-card">
+      <div class="preview-content">
+        <div class="preview-pill">● Binge Marathon Engine Active</div>
+        <h3>Auto-Stream Across All Course Modules</h3>
+        <p>
+          Bypasses Coursera's 2x speed cap with native 16x playback. Operates directly in the player to stream the final seconds, dispatch authentic signed telemetry, and auto-click to the next lesson.
+        </p>
+        <div style="display: flex; gap: 12px; font-size: 13px; color: #a78bfa; font-weight: 600;">
+          <span>✓ Unlocked Seeking</span>
+          <span>✓ Zero Anti-Cheat Flags</span>
+          <span>✓ Local-First</span>
+        </div>
+      </div>
+      <div class="mock-popup">
+        <div style="font-size: 14px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between;">
+          <span>CourseCraft Control Center</span>
+          <span style="font-size: 11px; color: #34d399;">● Connected</span>
+        </div>
+        <div class="mock-row">
+          <span class="mock-title">Complete Full Course</span>
+          <span class="mock-badge">ALL-IN-ONE</span>
+        </div>
+        <div class="mock-row">
+          <span class="mock-title">16x Video Marathon</span>
+          <span style="font-size: 11px; font-weight: 700; color: #38bdf8;">16.0x Speed</span>
+        </div>
+        <div class="mock-row">
+          <span class="mock-title">Speed-Read Modules</span>
+          <span style="font-size: 11px; color: #34d399;">Auto Sync</span>
+        </div>
+        <div class="mock-row">
+          <span class="mock-title">AI Coach Dialogue Solver</span>
+          <span style="font-size: 11px; color: #f59e0b;">Ready</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Grid -->
+  <section id="features">
+    <h2 class="section-title">Built for Efficiency & Academic Mastery</h2>
+    <p class="section-subtitle">
+      Automate tedious busywork and spend your time on concepts that truly matter.
+    </p>
+
+    <div class="features-grid">
+      <!-- 1. Video Marathon -->
+      <div class="feature-card">
+        <div class="feature-icon icon-purple">⚡</div>
+        <h3>16x Video Marathon Runner</h3>
+        <p>Uncaps Coursera's playbackRate ceiling. Fast-forwards long video lectures directly in the native player, authenticates genuine heartbeats, and auto-advances through the module.</p>
+      </div>
+
+      <!-- 2. Reading Supplements -->
+      <div class="feature-card">
+        <div class="feature-icon icon-emerald">📖</div>
+        <h3>Instant Speed-Read Modules</h3>
+        <p>One-click verification for reading supplements, course notes, and study guides via Coursera's completion endpoints. Zero waiting or manual scrolling.</p>
+      </div>
+
+      <!-- 3. AI Coach Dialogues -->
+      <div class="feature-card">
+        <div class="feature-icon icon-cyan">🤖</div>
+        <h3>AI Coach & Dialogue Solver</h3>
+        <p>Initializes GraphQL chat sessions, fulfills milestone check-ins, and marks interactive dialogues completed without manual prompt typing.</p>
+      </div>
+
+      <!-- 4. Forum Discussions -->
+      <div class="feature-card">
+        <div class="feature-icon icon-amber">💬</div>
+        <h3>Auto-Engage Discussions</h3>
+        <p>Automatically posts thoughtful, contextual peer comments to required discussion prompts to fulfill participation quotas effortlessly.</p>
+      </div>
+
+      <!-- 5. Smart Exam Copilot -->
+      <div class="feature-card">
+        <div class="feature-icon icon-indigo">🧠</div>
+        <h3>Smart Exam Copilot (Gemini AI)</h3>
+        <p>Hit Alt+Z on any quiz to receive step-by-step reasoning and conceptual hints powered by Google Gemini. Auto-signs Honor Code declarations.</p>
+      </div>
+
+      <!-- 6. Archive Vault -->
+      <div class="feature-card">
+        <div class="feature-icon icon-rose">📦</div>
+        <h3>Offline Course Vault (ZIP)</h3>
+        <p>Backup the entire course structure, readings, syllabi, and transcripts into a clean offline ZIP archive for permanent offline reference.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ Section -->
+  <section class="faq-section" id="faq">
+    <h2 class="section-title">Frequently Asked Questions</h2>
+    <p class="section-subtitle">Everything you need to know about CourseCraft.</p>
+
+    <div class="faq-item active">
+      <div class="faq-question">
+        <span>Is CourseCraft completely free and open-source?</span>
+        <span class="faq-toggle">▼</span>
+      </div>
+      <div class="faq-answer">
+        Yes! CourseCraft is 100% free under the MIT License. There are no paid tiers, no subscriptions, no tracking pixels, and no data telemetry. The complete source code is publicly available on GitHub.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-question">
+        <span>How does CourseCraft bypass Coursera's video validation?</span>
+        <span class="faq-toggle">▼</span>
+      </div>
+      <div class="faq-answer">
+        Instead of sending fake API calls that Coursera's server rejects with "Video completion validation failed", CourseCraft hooks the actual HTML5 video element on the lecture page. It plays the final seconds at 16x speed, allowing Coursera's native Video.js player to dispatch genuine authenticated stream heartbeats before auto-clicking next.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-question">
+        <span>Which browsers are supported?</span>
+        <span class="faq-toggle">▼</span>
+      </div>
+      <div class="faq-answer">
+        CourseCraft is built on the modern Manifest V3 extension standard and runs on Google Chrome, Microsoft Edge, Brave, Opera, Arc, and any Chromium-based desktop browser.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <div class="faq-question">
+        <span>How do I install the extension from the ZIP file?</span>
+        <span class="faq-toggle">▼</span>
+      </div>
+      <div class="faq-answer">
+        1. Download and extract the latest CourseCraft ZIP file.<br />
+        2. Open chrome://extensions/ in your browser and enable "Developer mode" (top right).<br />
+        3. Click "Load unpacked" and select the extracted folder.
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <p style="margin-bottom: 8px;">
+      CourseCraft is an open-source educational utility created by <a href="https://github.com/HarshKuro" target="_blank" rel="noopener">Harsh Kuro</a>.
+    </p>
+    <p style="font-size: 11px; opacity: 0.6;">
+      Not affiliated with or endorsed by Coursera, Inc. MIT Licensed.
+    </p>
+  </footer>
+
+  <script>
+    // FAQ Accordion Interaction
+    document.querySelectorAll('.faq-question').forEach((q) => {
+      q.addEventListener('click', () => {
+        const item = q.parentElement;
+        item.classList.toggle('active');
+      });
+    });
+  </script>
+</body>
+</html>

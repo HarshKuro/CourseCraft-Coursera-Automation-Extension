@@ -237,9 +237,18 @@ function initActionHandlers() {
 
 // Open Settings
 function initSettingsRoute() {
-  const settingsBtn = document.getElementById('settingsBtn');
-  settingsBtn?.addEventListener('click', () => {
-    chrome.runtime.openOptionsPage();
+  const settingsBtn = document.getElementById('openSettings') || document.getElementById('settingsBtn');
+  if (!settingsBtn) return;
+  settingsBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    const settingsUrl = chrome.runtime.getURL('dist/settings.html');
+    if (chrome.tabs?.create) {
+      chrome.tabs.create({ url: settingsUrl });
+    } else if (chrome.runtime?.openOptionsPage) {
+      chrome.runtime.openOptionsPage();
+    } else {
+      window.open(settingsUrl, '_blank');
+    }
   });
 }
 
@@ -261,28 +270,47 @@ function showToast(msg, isError = false) {
 }
 
 function initMarathonBanner() {
-  // Marathon Mode Banner Poller
+  // Marathon Mode Banner Poller with Heartbeat Validation
   const marathonBanner = document.getElementById('marathonBanner');
   const stopMarathonBtn = document.getElementById('stopMarathonBtn');
 
   function checkMarathonStatus() {
-    chrome.storage.local.get(['marathonActive', 'marathonCount', 'marathonTotal'], (data) => {
-      if (data?.marathonActive) {
+    chrome.storage.local.get(['marathonActive', 'marathonCount', 'marathonTotal', 'marathonHeartbeat'], (data) => {
+      if (!data?.marathonActive) {
+        marathonBanner?.classList.add('hidden');
+        return;
+      }
+
+      // 1. Heartbeat validation: if runner hasn't reported in > 15s, auto-clear stale state
+      const now = Date.now();
+      const lastBeat = Number(data.marathonHeartbeat) || 0;
+      if (!lastBeat || (now - lastBeat > 15000)) {
+        chrome.storage.local.set({ marathonActive: false, marathonHeartbeat: 0, marathonCount: 0, marathonTotal: 0 });
+        marathonBanner?.classList.add('hidden');
+        return;
+      }
+
+      // 2. Tab validation: only display banner if active tab is actually on Coursera
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const activeTab = tabs[0];
+        if (!activeTab?.url || !activeTab.url.includes('coursera.org/learn/')) {
+          marathonBanner?.classList.add('hidden');
+          return;
+        }
+
         marathonBanner?.classList.remove('hidden');
         const sub = document.getElementById('marathonSubtitle');
         if (sub) {
           sub.textContent = data.marathonTotal 
-            ? `Auto-advancing at 16x speed (${data.marathonCount || 0}/${data.marathonTotal} lectures)` 
-            : 'Auto-advancing at 16x speed';
+            ? `Auto-advancing (${data.marathonCount || 0}/${data.marathonTotal} lectures)` 
+            : 'Auto-advancing lectures';
         }
-      } else {
-        marathonBanner?.classList.add('hidden');
-      }
+      });
     });
   }
 
   stopMarathonBtn?.addEventListener('click', () => {
-    chrome.storage.local.set({ marathonActive: false }, () => {
+    chrome.storage.local.set({ marathonActive: false, marathonHeartbeat: 0, marathonCount: 0, marathonTotal: 0 }, () => {
       marathonBanner?.classList.add('hidden');
       showToast('Video Marathon stopped.');
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
